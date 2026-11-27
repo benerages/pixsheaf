@@ -18,6 +18,12 @@ export type PreviewState = "idle" | "working" | "done" | "error";
 export class Preview {
   state = $state<PreviewState>("idle");
   url = $state("");
+  /**
+   * The same bytes as a generic binary type for the download link: browsers
+   * that can show an image type (Firefox) may open it instead of saving it,
+   * even with the download attribute.
+   */
+  downloadUrl = $state("");
   blob = $state<Blob | null>(null);
   output = $state<JobFile["output"] | null>(null);
   input = $state<JobFile["input"] | null>(null);
@@ -69,6 +75,7 @@ export class Preview {
     this.blob = blob;
     this.output = output;
     this.url = URL.createObjectURL(blob);
+    this.downloadUrl = URL.createObjectURL(new Blob([blob], { type: "application/octet-stream" }));
     this.state = "done";
   }
 
@@ -89,10 +96,13 @@ export class Preview {
   }
 
   private clearUrl(): void {
-    if (this.url) {
-      URL.revokeObjectURL(this.url);
+    for (const url of [this.url, this.downloadUrl]) {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
     }
     this.url = "";
+    this.downloadUrl = "";
     this.blob = null;
   }
 

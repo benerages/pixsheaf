@@ -2,8 +2,8 @@
 # Browser end-to-end and accessibility tests (Playwright, axe-core) against a
 # running stack:
 #   docker compose up -d --build --wait && tests/e2e/ui.sh [playwright args]
-# PIXSHEAF_URL overrides the address; reports land in web/playwright-report
-# and web/test-results.
+# PIXSHEAF_URL overrides the address; the HTML report lands in
+# web/test-results/report, traces of failed tests in web/test-results/results.
 set -Eeuo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -21,12 +21,17 @@ if [[ $image_ref != *":v${want}-"* ]]; then
 fi
 
 docker build --quiet --file "$dockerfile" --tag pixsheaf-ui-tests . >/dev/null
-mkdir -p web/playwright-report web/test-results
-docker run --rm --network host --shm-size 1g \
-  --user "$(id -u):$(id -g)" \
+name="pixsheaf-ui-tests-$$"
+trap 'docker rm --force "$name" >/dev/null 2>&1 || true' EXIT
+status=0
+docker run --name "$name" --network host --shm-size 1g \
   --env CI="${CI:-false}" \
   --env PIXSHEAF_URL="${PIXSHEAF_URL:-http://127.0.0.1:8080}" \
-  --env PW_OUTPUT=/out \
-  --volume "$PWD/web/playwright-report:/out/report" \
-  --volume "$PWD/web/test-results:/out/results" \
-  pixsheaf-ui-tests pnpm exec playwright test "$@"
+  pixsheaf-ui-tests node_modules/.bin/playwright test "$@" || status=$?
+
+# Copy the report and traces out of the container (no bind mount, so the
+# container user needs no access to the checkout).
+rm -rf web/test-results
+mkdir -p web/test-results
+docker cp "$name:/out/." web/test-results/ >/dev/null || true
+exit "$status"

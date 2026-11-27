@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { fileInput, fixture, watchErrors } from "./helpers";
 
-test("one image: process, compare, and download a single file", async ({ page }) => {
+test("one image: process, compare, and download a single file", async ({ page, browserName }) => {
   const errors = watchErrors(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
@@ -15,8 +15,15 @@ test("one image: process, compare, and download a single file", async ({ page })
   await page.getByLabel("Format", { exact: true }).selectOption("webp");
   const link = page.getByRole("link", { name: "Download gradient.webp" });
   await expect(link).toBeVisible();
-  const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
-  expect(download.suggestedFilename()).toBe("gradient.webp");
+  await expect(link).toHaveAttribute("download", "gradient.webp");
+  await expect(link).toHaveAttribute("href", /^blob:/);
+  // Playwright's Firefox does not report downloads of blob: links (the
+  // batch ZIP, a server URL, does download there); the other browsers
+  // check the real download.
+  if (browserName !== "firefox") {
+    const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+    expect(download.suggestedFilename()).toBe("gradient.webp");
+  }
 
   // The comparison slider works with the keyboard.
   const slider = page.getByRole("slider", { name: "Comparison position" });

@@ -12,8 +12,9 @@ version=$(sed -n 's/.*"@playwright\/test": "\([^"]*\)".*/\1/p' web/package.json)
   exit 1
 }
 tag="mcr.microsoft.com/playwright:v${version}-noble"
-digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' |
-  sed -n 's/.*"digest":"\(sha256:[0-9a-f]\{64\}\)".*/\1/p')
+# The first "Digest:" line is the multi-arch index (or the single manifest).
+digest=$(docker buildx imagetools inspect "$tag" |
+  sed -n 's/^Digest:[[:space:]]*\(sha256:[0-9a-f]\{64\}\).*/\1/p' | head -n 1)
 [[ -n $digest ]] || { echo "no digest found for $tag" >&2; exit 1; }
 sed -i "s|^FROM mcr.microsoft.com/playwright:.*|FROM ${tag}@${digest}|" tests/e2e/ui.Dockerfile
 echo "pinned ${tag}@${digest}"

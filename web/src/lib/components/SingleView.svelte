@@ -83,7 +83,7 @@
 
     <div class="flex flex-wrap items-center gap-3">
       {#if preview.state === "done" && out}
-        <a class="btn-primary" href={preview.url} download={out.name}>
+        <a class="btn-primary" href={preview.downloadUrl} download={out.name}>
           <svg aria-hidden="true" viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0 4-4m-4 4-4-4M4 20h16" /></svg>
           {t("single.download", { name: out.name })}
         </a>

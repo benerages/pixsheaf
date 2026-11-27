@@ -17,6 +17,8 @@
     "lint:api": "redocly lint ../api/openapi.yaml --config ../redocly.yaml"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.1",
     "@redocly/cli": "2.82.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "4.3.5",
