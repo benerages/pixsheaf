@@ -4,7 +4,9 @@ package imaging
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"testing"
 
 	"github.com/benerages/pixsheaf/internal/pipeline"
@@ -166,11 +168,26 @@ func TestProcessTruncatedInputIsDecodeError(t *testing.T) {
 	}
 }
 
-func TestEncodeError(t *testing.T) {
-	if err := encodeError("pngload_source: libspng read error\n"); !errors.Is(err, ErrDecode) {
-		t.Errorf("loader message: %v", err)
+func TestProcessCorruptDataIsDecodeError(t *testing.T) {
+	// A valid PNG signature and header with image data that is not zlib:
+	// the header reads fine, the pixels do not.
+	chunk := func(typ string, data []byte) []byte {
+		b := binary.BigEndian.AppendUint32(nil, uint32(len(data)))
+		b = append(b, typ...)
+		b = append(b, data...)
+		return binary.BigEndian.AppendUint32(b, crc32.ChecksumIEEE(append([]byte(typ), data...)))
 	}
-	if err := encodeError("heifsave: encoder failed\n"); !errors.Is(err, ErrEncode) {
-		t.Errorf("saver message: %v", err)
+	ihdr := binary.BigEndian.AppendUint32(nil, 64)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, 48)
+	ihdr = append(ihdr, 8, 2, 0, 0, 0)
+	in := []byte("\x89PNG\r\n\x1a\n")
+	in = append(in, chunk("IHDR", ihdr)...)
+	in = append(in, chunk("IDAT", bytes.Repeat([]byte("not zlib data at all"), 20))...)
+	in = append(in, chunk("IEND", nil)...)
+	for _, format := range []string{"png", "webp", "jpeg"} {
+		p := parse(t, `{"version":1,"steps":[{"op":"convert","params":{"format":"`+format+`"}}]}`)
+		if _, err := Process(in, p, ProcessLimits{}); !errors.Is(err, ErrDecode) {
+			t.Errorf("%s: err = %v, want ErrDecode", format, err)
+		}
 	}
 }

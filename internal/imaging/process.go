@@ -48,6 +48,20 @@ static int px_join(VipsImage **frames, int n, VipsImage **out) {
 	return 0;
 }
 
+// px_decodes reports whether the input decodes completely (0) or not (-1):
+// it loads it again and reads every pixel.
+static int px_decodes(const void *buf, size_t len, int all_pages) {
+	VipsImage *img = all_pages
+		? vips_image_new_from_buffer(buf, len, "", "n", -1, "fail_on", VIPS_FAIL_ON_ERROR, NULL)
+		: vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR, NULL);
+	if (!img)
+		return -1;
+	double avg;
+	int r = vips_avg(img, &avg, NULL);
+	g_object_unref(img);
+	return r;
+}
+
 static int px_autorot(VipsImage *in, VipsImage **out) {
 	return vips_autorot(in, out, NULL);
 }
@@ -164,7 +178,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"runtime/debug"
 	"unsafe"
 
@@ -391,6 +404,12 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 		data, err = encode(im, saver.id, conv, quality, keep)
 	}
 	if err != nil {
+		// libvips decodes lazily, so a broken input often fails only while
+		// the output is written. Decode it once more to tell the two apart.
+		if errors.Is(err, ErrEncode) && info.Format != "bmp" && !decodes(s, input, animated) {
+			C.vips_error_clear()
+			return Output{}, fmt.Errorf("%w: %v", ErrDecode, err)
+		}
 		return Output{}, err
 	}
 	return Output{Data: data, Format: format, Width: frameSize.Width, Height: frameSize.Height, Pages: pages}, nil
@@ -434,18 +453,9 @@ func joinFrames(frames []*image) (*image, error) {
 	return joined, nil
 }
 
-// loaderMessage matches libvips error lines from a loader, such as
-// "pngload_source: ..." or "jpegload_buffer: ...".
-var loaderMessage = regexp.MustCompile(`(?mi)^\w*load\w*: `)
-
-// encodeError classifies a failed save. libvips decodes lazily, so a
-// broken input often fails only while the output is written; the error
-// then comes from the loader and is a decode error.
-func encodeError(msg string) error {
-	if loaderMessage.MatchString(msg) {
-		return fmt.Errorf("%w: %s", ErrDecode, msg)
-	}
-	return fmt.Errorf("%w: %s", ErrEncode, msg)
+// decodes reports whether input decodes completely.
+func decodes(s *session, input []byte, allPages bool) bool {
+	return C.px_decodes(s.cbytes(input), C.size_t(len(input)), cbool(allPages)) == 0
 }
 
 // loadBMP decodes a BMP in Go and copies it into libvips. The Go image is
@@ -488,7 +498,7 @@ func encode(im *image, format C.int, conv pipeline.Convert, quality int, keep C.
 	var out unsafe.Pointer
 	var n C.size_t
 	if C.px_save(im.p, opts, &out, &n) != 0 {
-		return nil, encodeError(lastError())
+		return nil, fmt.Errorf("%w: %s", ErrEncode, lastError())
 	}
 	defer C.g_free(C.gpointer(out))
 	return C.GoBytes(out, C.int(n)), nil
