@@ -28,8 +28,12 @@ var ErrEncode = errors.New("imaging: the image could not be encoded")
 // crop rectangle outside it.
 var ErrInvalidInput = errors.New("imaging: the step does not fit the image")
 
+// ErrTargetUnreachable means that no encoder setting produces an output
+// within the requested target size.
+var ErrTargetUnreachable = errors.New("imaging: the target size cannot be reached")
+
 // ErrNotImplemented marks pipeline features that follow in a later step of
-// Phase 3 (watermark, target size, BMP and PDF output, animation).
+// Phase 3 (BMP and PDF output, animation).
 var ErrNotImplemented = errors.New("imaging: not implemented yet")
 
 // ProcessLimits bound Process. Zero means no limit.

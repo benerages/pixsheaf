@@ -98,6 +98,13 @@ static int px_flatten(VipsImage *in, VipsImage **out) {
 	return r;
 }
 
+// px_copy_memory decodes the image once into memory, so that repeated
+// encodes (target size search) do not decode the input again.
+static int px_copy_memory(VipsImage *in, VipsImage **out) {
+	*out = vips_image_copy_memory(in);
+	return *out ? 0 : -1;
+}
+
 static int px_save(VipsImage *in, px_save_opts o, void **buf, size_t *len) {
 	switch (o.format) {
 	case PX_JPEG:
@@ -181,6 +188,36 @@ func (im *image) apply(name string, op func(in *C.VipsImage, out **C.VipsImage) 
 	return nil
 }
 
+// toSRGB converts the image to sRGB (see px_to_srgb).
+func (im *image) toSRGB() error {
+	return im.apply("to sRGB", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_to_srgb(in, out) })
+}
+
+// isCMYK reports whether the image is in CMYK.
+func (im *image) isCMYK() bool {
+	return C.vips_image_guess_interpretation(im.p) == C.VIPS_INTERPRETATION_CMYK
+}
+
+// session owns the C buffers libvips reads lazily from until the output is
+// encoded.
+type session struct {
+	bufs []unsafe.Pointer
+}
+
+// cbytes returns a C copy of b that lives until free.
+func (s *session) cbytes(b []byte) unsafe.Pointer {
+	p := C.CBytes(b)
+	s.bufs = append(s.bufs, p)
+	return p
+}
+
+func (s *session) free() {
+	for _, p := range s.bufs {
+		C.free(p)
+	}
+	s.bufs = nil
+}
+
 // Process decodes input, runs the pipeline, and encodes the result. The
 // header is checked against lim before any pixel data is decoded.
 func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, error) {
@@ -194,8 +231,9 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 
 	// libvips decodes lazily and keeps reading the buffer until the output
 	// is encoded, so it gets a C copy instead of a Go pointer.
-	buf := C.CBytes(input)
-	defer C.free(buf)
+	s := &session{}
+	defer s.free()
+	buf := s.cbytes(input)
 	im := &image{}
 	if C.px_load(buf, C.size_t(len(input)), &im.p) != 0 {
 		return Output{}, fmt.Errorf("%w: %s", ErrDecode, lastError())
@@ -204,16 +242,16 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 
 	format := pipeline.DefaultOutputFormat(info.Format)
 	var conv pipeline.Convert
-	for i, s := range p.Steps {
+	for i, step := range p.Steps {
 		cur := im.size()
-		if !s.When.Matches(pipeline.Facts{Size: cur, SourceFormat: info.Format}) {
+		if !step.When.Matches(pipeline.Facts{Size: cur, SourceFormat: info.Format}) {
 			continue
 		}
-		if err := runStep(im, s, cur, lim); err != nil {
-			return Output{}, fmt.Errorf("step %d (%s): %w", i, s.Op, err)
+		if err := runStep(s, im, step, cur, lim); err != nil {
+			return Output{}, fmt.Errorf("step %d (%s): %w", i, step.Op, err)
 		}
-		if s.Convert != nil {
-			conv = *s.Convert
+		if step.Convert != nil {
+			conv = *step.Convert
 			format = conv.Format
 		}
 	}
@@ -222,11 +260,8 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	if !ok {
 		return Output{}, fmt.Errorf("%w: output format %s", ErrNotImplemented, format)
 	}
-	if conv.TargetSizeKb > 0 {
-		return Output{}, fmt.Errorf("%w: targetSizeKb", ErrNotImplemented)
-	}
 	if p.ColorSpace == "srgb" {
-		if err := im.apply("to sRGB", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_to_srgb(in, out) }); err != nil {
+		if err := im.toSRGB(); err != nil {
 			return Output{}, fmt.Errorf("%w: %v", ErrDecode, err)
 		}
 	}
@@ -253,12 +288,27 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	if lim.MaxOutputPixels > 0 && final.Pixels() > lim.MaxOutputPixels {
 		return Output{}, fmt.Errorf("%w: output would have %dx%d pixels", ErrTooManyPixels, final.Width, final.Height)
 	}
-	quality := conv.Quality
-	if quality == 0 {
-		quality = saver.defaultQuality
+	var data []byte
+	if conv.TargetSizeKb > 0 {
+		data, err = encodeToTarget(im, saver.id, conv, keep, conv.TargetSizeKb*1024)
+	} else {
+		quality := conv.Quality
+		if quality == 0 {
+			quality = saver.defaultQuality
+		}
+		data, err = encode(im, saver.id, conv, quality, keep)
 	}
+	if err != nil {
+		return Output{}, err
+	}
+	return Output{Data: data, Format: format, Width: final.Width, Height: final.Height}, nil
+}
+
+// encode runs the saver once. quality 0 means the saver's default; for PNG
+// a quality enables palette quantization.
+func encode(im *image, format C.int, conv pipeline.Convert, quality int, keep C.int) ([]byte, error) {
 	opts := C.px_save_opts{
-		format:      saver.id,
+		format:      format,
 		q:           C.int(quality),
 		lossless:    cbool(conv.Lossless),
 		optimize:    cbool(conv.OptimizeOrDefault()),
@@ -268,18 +318,71 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	var out unsafe.Pointer
 	var n C.size_t
 	if C.px_save(im.p, opts, &out, &n) != 0 {
-		return Output{}, fmt.Errorf("%w: %s", ErrEncode, lastError())
+		return nil, fmt.Errorf("%w: %s", ErrEncode, lastError())
 	}
 	defer C.g_free(C.gpointer(out))
-	return Output{
-		Data:   C.GoBytes(out, C.int(n)),
-		Format: format,
-		Width:  final.Width,
-		Height: final.Height,
-	}, nil
+	return C.GoBytes(out, C.int(n)), nil
 }
 
-func runStep(im *image, s pipeline.Step, cur pipeline.Size, lim ProcessLimits) error {
+// targetCopyBudget bounds the decoded copy kept for the target size search.
+const targetCopyBudget = 128 << 20
+
+// memoryBytes is the size of the decoded image in bytes.
+func (im *image) memoryBytes() int64 {
+	return int64(C.vips_image_get_width(im.p)) * int64(C.vips_image_get_height(im.p)) *
+		int64(C.vips_image_get_bands(im.p)) * int64(C.vips_format_sizeof(C.vips_image_get_format(im.p)))
+}
+
+// encodeToTarget finds the highest quality whose output fits in limit
+// bytes, with a binary search over quality 1 to 95 (at most 7 encodes).
+// Lossless formats are encoded once; PNG falls back to palette
+// quantization with the same search.
+func encodeToTarget(im *image, format C.int, conv pipeline.Convert, keep C.int, limit int) ([]byte, error) {
+	// Decode once when the pixels fit in the budget; otherwise every encode
+	// runs the (lazy) pipeline again, which is slower but bounded in memory.
+	if im.memoryBytes() <= targetCopyBudget {
+		if err := im.apply("copy to memory", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_copy_memory(in, out) }); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDecode, err)
+		}
+	}
+	switch format {
+	case C.PX_JPEG, C.PX_WEBP, C.PX_AVIF, C.PX_JXL:
+	case C.PX_PNG:
+		data, err := encode(im, format, conv, 0, keep)
+		if err != nil || len(data) <= limit {
+			return data, err
+		}
+	default:
+		data, err := encode(im, format, conv, 0, keep)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > limit {
+			return nil, fmt.Errorf("%w: %d bytes at the only setting", ErrTargetUnreachable, len(data))
+		}
+		return data, nil
+	}
+	var best []byte
+	lo, hi := 1, 95
+	for lo <= hi {
+		q := (lo + hi) / 2
+		data, err := encode(im, format, conv, q, keep)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) <= limit {
+			best, lo = data, q+1
+		} else {
+			hi = q - 1
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("%w: more than %d bytes even at the lowest quality", ErrTargetUnreachable, limit)
+	}
+	return best, nil
+}
+
+func runStep(ses *session, im *image, s pipeline.Step, cur pipeline.Size, lim ProcessLimits) error {
 	switch s.Op {
 	case pipeline.OpAutoOrient:
 		return im.apply("autorot", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_autorot(in, out) })
@@ -312,7 +415,7 @@ func runStep(im *image, s pipeline.Step, cur pipeline.Size, lim ProcessLimits) e
 		vertical := s.Flip == "vertical"
 		return im.apply("flip", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_flip(in, out, cbool(vertical)) })
 	case pipeline.OpWatermark:
-		return fmt.Errorf("%w: watermark", ErrNotImplemented)
+		return watermark(ses, im, *s.Watermark, cur)
 	case pipeline.OpConvert:
 		return nil
 	}

@@ -855,7 +855,7 @@ type ValidationError struct {
 	Pointer string `json:"pointer"`
 }
 
-// WatermarkParams A text or an image placed on the picture. Text is plain text (no markup) rendered with the bundled font. An image watermark is a PNG or WebP, embedded as base64 and subject to `maxWatermarkBytes`; it is decoded in the worker sandbox like any upload. Exactly one of `text` and `image` is required, and `color` applies only to text (enforced by the server).
+// WatermarkParams A text or an image placed on the picture. Text is plain text (no markup) rendered with the bundled font. An image watermark is a PNG or WebP, embedded as base64 and subject to `maxWatermarkBytes`; it is decoded in the worker sandbox like any upload, with at most 4096 x 4096 pixels. Exactly one of `text` and `image` is required, and `color` applies only to text (enforced by the server). The watermark is shrunk if it would not fit inside the margins. A watermark that cannot be used fails the file with `step_not_applicable`.
 type WatermarkParams struct {
 	// Color Text color as `#RRGGBB`.
 	Color *string `json:"color,omitempty"`
@@ -872,14 +872,16 @@ type WatermarkParams struct {
 
 	// Size Watermark width as a percentage of the image width.
 	Size *float32 `json:"size,omitempty"`
-	Text *string  `json:"text,omitempty"`
+
+	// Text One line of plain text without control characters, rendered with the bundled Go Bold font (Latin, Greek and Cyrillic; other scripts and emoji are not supported).
+	Text *string `json:"text,omitempty"`
 }
 
 // WatermarkStep defines model for WatermarkStep.
 type WatermarkStep struct {
 	Op WatermarkStepOp `json:"op"`
 
-	// Params A text or an image placed on the picture. Text is plain text (no markup) rendered with the bundled font. An image watermark is a PNG or WebP, embedded as base64 and subject to `maxWatermarkBytes`; it is decoded in the worker sandbox like any upload. Exactly one of `text` and `image` is required, and `color` applies only to text (enforced by the server).
+	// Params A text or an image placed on the picture. Text is plain text (no markup) rendered with the bundled font. An image watermark is a PNG or WebP, embedded as base64 and subject to `maxWatermarkBytes`; it is decoded in the worker sandbox like any upload, with at most 4096 x 4096 pixels. Exactly one of `text` and `image` is required, and `color` applies only to text (enforced by the server). The watermark is shrunk if it would not fit inside the margins. A watermark that cannot be used fails the file with `step_not_applicable`.
 	Params WatermarkParams `json:"params"`
 
 	// When All given conditions must hold. Dimensions refer to the image as it is when the step runs. Fixed vocabulary, no expressions (ADR 0009).

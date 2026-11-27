@@ -23,3 +23,4 @@ Each ADR records one decision with its context and consequences. Status values: 
 | [0017](0017-palette-quantization-library.md) | Palette quantization with quantizr instead of libimagequant | Accepted |
 | [0018](0018-wolfi-worker-base.md) | Wolfi as the worker base; minimal runtime root filesystem | Accepted |
 | [0019](0019-job-access-and-upload-flow.md) | Job access tokens and upload flow | Accepted |
+| [0020](0020-text-watermark-rendering.md) | Text watermarks rendered in Go with the bundled Go fonts | Accepted |

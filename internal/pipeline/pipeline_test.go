@@ -64,6 +64,7 @@ func TestParseRejects(t *testing.T) {
 		"watermark both":          `{"version":1,"steps":[{"op":"watermark","params":{"text":"a","image":"AAAA"}}]}`,
 		"watermark color on img":  `{"version":1,"steps":[{"op":"watermark","params":{"image":"AAAA","color":"#000000"}}]}`,
 		"watermark bad color":     `{"version":1,"steps":[{"op":"watermark","params":{"text":"a","color":"red"}}]}`,
+		"watermark newline":       `{"version":1,"steps":[{"op":"watermark","params":{"text":"a\nb"}}]}`,
 		"convert bmp-ish":         `{"version":1,"steps":[{"op":"convert","params":{"format":"psd"}}]}`,
 		"target with quality":     `{"version":1,"steps":[{"op":"convert","params":{"format":"jpeg","quality":80,"targetSizeKb":100}}]}`,
 		"lossless avif":           `{"version":1,"steps":[{"op":"convert","params":{"format":"avif","lossless":true}}]}`,

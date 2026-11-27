@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 )
 
 // Version is the pipeline format version this package implements.
@@ -456,6 +457,8 @@ func validateWatermark(raw json.RawMessage, w *Watermark, ptr string, lim Limits
 	}
 	if hasText && (len([]rune(w.Text)) < 1 || len([]rune(w.Text)) > MaxTextLength) {
 		e.add(ptr+"/text", "must be 1 to %d characters", MaxTextLength)
+	} else if hasText && strings.IndexFunc(w.Text, unicode.IsControl) >= 0 {
+		e.add(ptr+"/text", "must not contain control characters (one line of plain text)")
 	}
 	if hasImage {
 		maxB64 := MaxWatermarkB64

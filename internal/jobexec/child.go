@@ -128,6 +128,8 @@ func process(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 		return failure(jobproto.CodeEncodeFailed, "the image could not be encoded"), nil
 	case errors.Is(err, imaging.ErrInvalidInput):
 		return failure(jobproto.CodeStepNotApplicable, err.Error()), nil
+	case errors.Is(err, imaging.ErrTargetUnreachable):
+		return failure(jobproto.CodeTargetUnreachable, err.Error()), nil
 	case errors.Is(err, imaging.ErrNotImplemented):
 		return failure(jobproto.CodeInternal, err.Error()), nil
 	default:
