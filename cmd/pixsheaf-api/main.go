@@ -20,12 +20,19 @@ import (
 
 	"github.com/benerages/pixsheaf/internal/config"
 	"github.com/benerages/pixsheaf/internal/httpapi"
+	"github.com/benerages/pixsheaf/internal/jobs"
 	"github.com/benerages/pixsheaf/internal/transport"
 	"github.com/benerages/pixsheaf/internal/ui"
 	"github.com/benerages/pixsheaf/internal/version"
 )
 
-const shutdownTimeout = 30 * time.Second
+const (
+	shutdownTimeout = 30 * time.Second
+	sweepInterval   = 5 * time.Second
+	// transferAllowance is added to the job timeout for the lease: the
+	// worker also has to receive the input and send the output.
+	transferAllowance = 30 * time.Second
+)
 
 func main() {
 	cmd := "serve"
@@ -57,12 +64,20 @@ func serve() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	manager, err := jobs.New(cfg.TmpDir, jobLimits(cfg))
+	if err != nil {
+		logger.Error("job storage", "dir", cfg.TmpDir, "err", err)
+		return 1
+	}
+	defer func() { _ = manager.Close() }()
+	go manager.Run(ctx, sweepInterval)
+
 	ln, err := transport.Listen(ctx, cfg.SocketPath)
 	if err != nil {
 		logger.Error("internal socket", "path", cfg.SocketPath, "err", err)
 		return 1
 	}
-	internal := transport.NewServer()
+	internal := transport.NewServer(manager)
 	public := httpapi.New(cfg.ListenAddr, ui.FS(), logger)
 
 	errc := make(chan error, 2)
@@ -82,9 +97,31 @@ func serve() int {
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	_ = public.Shutdown(sctx)
+	// Closing the manager ends the workers' long polls, so the internal
+	// server can shut down without waiting for them. Results of files that
+	// are still running are lost with the in-memory jobs anyway.
+	_ = manager.Close()
 	_ = internal.Shutdown(sctx)
 	_ = os.Remove(cfg.SocketPath)
 	return 0
+}
+
+func jobLimits(cfg config.Config) jobs.Limits {
+	return jobs.Limits{
+		MaxUploadBytes:  int64(cfg.MaxUploadMB) << 20,
+		MaxJobBytes:     int64(cfg.MaxJobMB) << 20,
+		MaxFiles:        cfg.MaxFiles,
+		MaxOutputBytes:  int64(cfg.MaxOutputMB) << 20,
+		MaxInputPixels:  cfg.MaxInputPixels,
+		MaxOutputPixels: cfg.MaxOutputPixels,
+		MaxFrames:       cfg.MaxFrames,
+		MaxConcurrency:  cfg.MaxConcurrency,
+		MaxQueued:       cfg.MaxQueue,
+		MaxJobs:         cfg.MaxJobs,
+		MaxStoredBytes:  int64(cfg.MaxStoreMB) << 20,
+		TTL:             cfg.JobTTL,
+		LeaseTimeout:    cfg.JobTimeout + transferAllowance,
+	}
 }
 
 // healthcheck is used as the container health check; the image has no curl.

@@ -69,6 +69,7 @@ const (
 	CodeEncodeFailed      = "encode_failed"
 	CodeStepNotApplicable = "step_not_applicable"
 	CodeTargetUnreachable = "target_size_unreachable"
+	CodeTimeout           = "timeout"
 	CodeInternal          = "internal"
 )
 

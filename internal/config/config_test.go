@@ -17,7 +17,10 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.SocketPath != "/run/pixsheaf/api.sock" || c.MaxUploadMB != 25 || c.MaxFiles != 50 ||
 		c.JobTimeout != 60*time.Second || c.MaxConcurrency != 2 || len(c.TrustedProxies) != 0 ||
-		c.LogLevel != slog.LevelInfo || c.JobMemoryMB != 384 {
+		c.LogLevel != slog.LevelInfo || c.JobMemoryMB != 384 || c.MaxJobMB != 250 || c.MaxOutputMB != 100 ||
+		c.MaxInputPixels != 50_000_000 || c.MaxOutputPixels != 50_000_000 || c.MaxFrames != 300 ||
+		c.MaxWatermarkKB != 512 || c.MaxQueue != 100 || c.MaxJobs != 200 || c.JobTTL != 15*time.Minute ||
+		c.TmpDir != "/tmp/pixsheaf" || c.MaxStoreMB != 384 {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
 }
@@ -56,6 +59,9 @@ func TestRejects(t *testing.T) {
 		"relative socket":   "PIXSHEAF_SOCKET=api.sock",
 		"bad listen addr":   "PIXSHEAF_LISTEN_ADDR=localhost",
 		"bad log level":     "PIXSHEAF_LOG_LEVEL=loud",
+		"too many frames":   "PIXSHEAF_MAX_FRAMES=1001",
+		"ttl too long":      "PIXSHEAF_JOB_TTL=48h",
+		"relative tmp dir":  "PIXSHEAF_TMP_DIR=tmp",
 	}
 	for name, kv := range cases {
 		t.Run(name, func(t *testing.T) {

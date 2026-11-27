@@ -33,6 +33,30 @@ type Config struct {
 	MaxConcurrency int
 	// JobMemoryMB caps the memory of one job process (RLIMIT_DATA).
 	JobMemoryMB int
+	// MaxJobMB bounds the uploads of one job together.
+	MaxJobMB int
+	// MaxOutputMB bounds one processed file.
+	MaxOutputMB int
+	// MaxInputPixels bounds width x height x frames of an upload.
+	MaxInputPixels int64
+	// MaxOutputPixels bounds every intermediate and final image.
+	MaxOutputPixels int64
+	// MaxFrames bounds the frames of an animated GIF or WebP.
+	MaxFrames int
+	// MaxWatermarkKB bounds an image watermark.
+	MaxWatermarkKB int
+	// MaxQueue is the number of files waiting for a worker; further
+	// uploads get 503 with Retry-After.
+	MaxQueue int
+	// MaxJobs bounds the jobs kept in memory at the same time.
+	MaxJobs int
+	// JobTTL is how long a job and its files are kept if not downloaded.
+	JobTTL time.Duration
+	// TmpDir holds uploads and results (a tmpfs mount).
+	TmpDir string
+	// MaxStoreMB bounds all uploads and results stored in TmpDir; keep it
+	// below the size of the tmpfs.
+	MaxStoreMB int
 	// TrustedProxies lists the networks whose X-Forwarded-For is honored.
 	TrustedProxies []netip.Prefix
 	// LogLevel is the minimum log level.
@@ -74,6 +98,37 @@ var settings = map[string]setting{
 	}},
 	"MAX_CONCURRENCY": {"2", intIn(1, 256, func(c *Config, n int) { c.MaxConcurrency = n })},
 	"JOB_MEMORY_MB":   {"384", intIn(64, 65536, func(c *Config, n int) { c.JobMemoryMB = n })},
+	"MAX_JOB_MB":      {"250", intIn(1, 65536, func(c *Config, n int) { c.MaxJobMB = n })},
+	"MAX_OUTPUT_MB":   {"100", intIn(1, 256, func(c *Config, n int) { c.MaxOutputMB = n })},
+	"MAX_INPUT_PIXELS": {"50000000", intIn(1, 1_000_000_000, func(c *Config, n int) {
+		c.MaxInputPixels = int64(n)
+	})},
+	"MAX_OUTPUT_PIXELS": {"50000000", intIn(1, 1_000_000_000, func(c *Config, n int) {
+		c.MaxOutputPixels = int64(n)
+	})},
+	"MAX_FRAMES":       {"300", intIn(1, 1000, func(c *Config, n int) { c.MaxFrames = n })},
+	"MAX_WATERMARK_KB": {"512", intIn(0, 1024, func(c *Config, n int) { c.MaxWatermarkKB = n })},
+	"MAX_QUEUE":        {"100", intIn(1, 100000, func(c *Config, n int) { c.MaxQueue = n })},
+	"MAX_STORE_MB":     {"384", intIn(1, 1<<20, func(c *Config, n int) { c.MaxStoreMB = n })},
+	"MAX_JOBS":         {"200", intIn(1, 100000, func(c *Config, n int) { c.MaxJobs = n })},
+	"JOB_TTL": {"15m", func(c *Config, v string) error {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return err
+		}
+		if d < time.Minute || d > 24*time.Hour {
+			return fmt.Errorf("must be between 1m and 24h")
+		}
+		c.JobTTL = d
+		return nil
+	}},
+	"TMP_DIR": {"/tmp/pixsheaf", func(c *Config, v string) error {
+		if !strings.HasPrefix(v, "/") || v == "/" {
+			return fmt.Errorf("must be an absolute path below /")
+		}
+		c.TmpDir = v
+		return nil
+	}},
 	"TRUSTED_PROXIES": {"", func(c *Config, v string) error {
 		c.TrustedProxies = nil
 		for _, part := range strings.Split(v, ",") {

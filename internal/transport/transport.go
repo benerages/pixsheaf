@@ -41,16 +41,23 @@ func Listen(ctx context.Context, path string) (net.Listener, error) {
 	return ln, nil
 }
 
-// NewServer returns the internal HTTP server for workers.
-func NewServer() *http.Server {
+// NewServer returns the internal HTTP server for workers. tasks may be nil
+// (ping only), which the tests use.
+func NewServer(tasks TaskSource) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+PingPath, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "pong")
 	})
+	if tasks != nil {
+		mux.Handle("POST "+claimPath, claimHandler(tasks))
+		mux.Handle("POST "+resultPath+"{id}", resultHandler(tasks))
+	}
 	return &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// Claims are long polls and results can be large; the job
+		// timeout bounds both, so there is no read or write timeout.
+		IdleTimeout: 60 * time.Second,
 	}
 }
 

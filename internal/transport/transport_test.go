@@ -14,7 +14,7 @@ func TestPingOverSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer()
+	srv := NewServer(nil)
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 
