@@ -1,11 +1,15 @@
 // Formatting helpers that follow the current locale.
 
+/**
+ * Sizes in binary units with the familiar labels, so a configured limit of
+ * 25 MiB reads as "25 MB", like in most file managers.
+ */
 export function formatBytes(bytes: number, locale: string): string {
   const units = ["B", "KB", "MB", "GB"];
   let value = bytes;
   let unit = 0;
-  while (value >= 1000 && unit < units.length - 1) {
-    value /= 1000;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
     unit++;
   }
   const digits = unit === 0 || value >= 100 ? 0 : 1;

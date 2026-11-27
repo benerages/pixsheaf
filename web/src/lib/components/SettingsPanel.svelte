@@ -179,7 +179,7 @@
 
   <fieldset class="space-y-3 p-4" disabled={!quick}>
     <legend class="sr-only">{t("settings.resize")}</legend>
-    <div class="grid grid-cols-2 gap-3">
+    <div class={s.resize === "none" ? "" : "grid grid-cols-2 gap-3"}>
       <div>
         <label class="label" for="resize">{t("settings.resize")}</label>
         <select id="resize" class="field" bind:value={s.resize}>

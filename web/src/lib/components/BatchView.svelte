@@ -103,7 +103,7 @@
         <div class="mb-1 flex justify-between text-sm">
           <span>{t("batch.progress", { done, total: images })}</span>
         </div>
-        <progress class="h-2 w-full overflow-hidden rounded-full accent-accent-700" max={Math.max(images, 1)} value={done}></progress>
+        <progress class="progress" max={Math.max(images, 1)} value={done}></progress>
       </div>
     {/if}
 

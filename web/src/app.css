@@ -68,3 +68,18 @@
 @utility muted {
   @apply text-stone-600 dark:text-stone-400;
 }
+
+/* Progress bar in the theme colors; browsers otherwise pick their own
+   accent, and Chromium shifts it in dark mode. */
+@utility progress {
+  @apply h-2 w-full appearance-none overflow-hidden rounded-full border-0 bg-stone-200 dark:bg-stone-800;
+  &::-webkit-progress-bar {
+    @apply bg-stone-200 dark:bg-stone-800;
+  }
+  &::-webkit-progress-value {
+    @apply rounded-full bg-accent-700 transition-[width] dark:bg-accent-300;
+  }
+  &::-moz-progress-bar {
+    @apply rounded-full bg-accent-700 dark:bg-accent-300;
+  }
+}
