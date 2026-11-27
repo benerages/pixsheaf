@@ -341,6 +341,46 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /jobs/{jobId}/files/{fileId}/download:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+      - $ref: "#/components/parameters/FileId"
+    get:
+      tags: [files]
+      operationId: downloadFile
+      summary: Download one processed file once
+      description: >-
+        Returns the result of one file of a job, for example to save single
+        files of a batch. Available once the file is `done`. The result can
+        be downloaded once; afterwards it is deleted, the file shows
+        `downloaded: true`, and the job's ZIP download leaves it out (the
+        report still lists it). The `pixsheaf_job` cookie is accepted here.
+      security:
+        - jobToken: []
+        - jobCookie: []
+      responses:
+        "200":
+          description: The processed image.
+          headers:
+            Content-Disposition:
+              description: '`attachment` with the output file name (RFC 6266).'
+              schema:
+                type: string
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/octet-stream:
+              schema:
+                $ref: "#/components/schemas/Binary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /jobs/{jobId}/events:
     parameters:
       - $ref: "#/components/parameters/JobId"
@@ -884,6 +924,9 @@ components:
         archiveId:
           description: The archive this image came from.
           $ref: "#/components/schemas/Id"
+        downloaded:
+          description: The result was downloaded on its own and is no longer stored.
+          type: boolean
         status:
           $ref: "#/components/schemas/FileStatus"
         input:

@@ -20,6 +20,7 @@ const (
 	codeBodyTooLarge      = "body_too_large"
 	codeJobNotOpen        = "job_not_open"
 	codeJobNotDone        = "job_not_done"
+	codeFileNotDone       = "file_not_done"
 	codeNoResult          = "no_result"
 	codeQueueFull         = "queue_full"
 	codeTooManyJobs       = "too_many_jobs"

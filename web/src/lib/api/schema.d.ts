@@ -131,6 +131,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobId}/files/{fileId}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["parameters"]["JobId"];
+                fileId: components["parameters"]["FileId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download one processed file once
+         * @description Returns the result of one file of a job, for example to save single files of a batch. Available once the file is `done`. The result can be downloaded once; afterwards it is deleted, the file shows `downloaded: true`, and the job's ZIP download leaves it out (the report still lists it). The `pixsheaf_job` cookie is accepted here.
+         */
+        get: operations["downloadFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobId}/events": {
         parameters: {
             query?: never;
@@ -331,6 +354,8 @@ export interface components {
             source?: string;
             /** @description The archive this image came from. */
             archiveId?: components["schemas"]["Id"];
+            /** @description The result was downloaded on its own and is no longer stored. */
+            downloaded?: boolean;
             status: components["schemas"]["FileStatus"];
             input?: components["schemas"]["ImageInfo"];
             output?: components["schemas"]["OutputInfo"];
@@ -933,6 +958,36 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    downloadFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["parameters"]["JobId"];
+                fileId: components["parameters"]["FileId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The processed image. */
+            200: {
+                headers: {
+                    /** @description `attachment` with the output file name (RFC 6266). */
+                    "Content-Disposition"?: string;
+                    "Cache-Control": components["headers"]["CacheControlNoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": components["schemas"]["Binary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };

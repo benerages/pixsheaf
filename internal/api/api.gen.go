@@ -714,8 +714,11 @@ type JobCreated struct {
 // JobFile defines model for JobFile.
 type JobFile struct {
 	// ArchiveId The archive this image came from.
-	ArchiveId *Id        `json:"archiveId,omitempty"`
-	Error     *FileError `json:"error,omitempty"`
+	ArchiveId *Id `json:"archiveId,omitempty"`
+
+	// Downloaded The result was downloaded on its own and is no longer stored.
+	Downloaded *bool      `json:"downloaded,omitempty"`
+	Error      *FileError `json:"error,omitempty"`
 
 	// Id Random identifier with 128 bits of entropy (base64url, no padding).
 	Id Id `json:"id"`

@@ -66,6 +66,7 @@ func (a *jobAPI) routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/jobs/{jobId}/files/{fileId}", csrf(a.withJob(false, a.cancelFile)))
 	mux.HandleFunc("GET /api/v1/jobs/{jobId}/events", a.withJob(true, a.events))
 	mux.HandleFunc("GET /api/v1/jobs/{jobId}/download", a.withJob(true, a.download))
+	mux.HandleFunc("GET /api/v1/jobs/{jobId}/files/{fileId}/download", a.withJob(true, a.downloadFile))
 	mux.HandleFunc("GET /api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeProblem(w, http.StatusNotFound, codeNotFound, "")
 	})
@@ -336,6 +337,34 @@ func (a *jobAPI) download(w http.ResponseWriter, _ *http.Request, id string) {
 		a.sendArchive(w, d)
 		return
 	}
+	a.sendFile(w, d)
+}
+
+func (a *jobAPI) downloadFile(w http.ResponseWriter, r *http.Request, id string) {
+	fileID := r.PathValue("fileId")
+	if !validID(fileID) {
+		writeProblem(w, http.StatusNotFound, codeNotFound, "")
+		return
+	}
+	d, err := a.m.TakeFile(id, fileID)
+	switch {
+	case errors.Is(err, jobs.ErrNotReady):
+		writeProblem(w, http.StatusConflict, codeFileNotDone, "the file is not done, or it failed")
+		return
+	case errors.Is(err, jobs.ErrNotFound):
+		writeProblem(w, http.StatusNotFound, codeNotFound, "")
+		return
+	case err != nil:
+		a.logger.Error("opening result", "err", err)
+		writeProblem(w, http.StatusInternalServerError, codeInternal, "")
+		return
+	}
+	defer d.Release()
+	a.sendFile(w, d)
+}
+
+// sendFile streams one result.
+func (a *jobAPI) sendFile(w http.ResponseWriter, d jobs.Download) {
 	defer func() { _ = d.File.Close() }()
 	h := w.Header()
 	h.Set("Content-Type", d.ContentType)
@@ -533,6 +562,10 @@ func toAPIFile(f jobs.File) api.JobFile {
 	source := f.Source
 	out := api.JobFile{
 		Id: f.ID, Index: f.Index, Kind: api.JobFileKind(f.Kind), Status: api.FileStatus(f.Status), Source: &source,
+	}
+	if f.Downloaded {
+		downloaded := true
+		out.Downloaded = &downloaded
 	}
 	if f.InputFormat != "" {
 		out.Input = &api.ImageInfo{Bytes: int(f.InputBytes), Format: api.InputFormat(f.InputFormat)}

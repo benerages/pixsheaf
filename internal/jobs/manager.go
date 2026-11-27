@@ -153,6 +153,8 @@ type file struct {
 	outBytes int64
 	errCode  string
 	errMsg   string
+	// downloaded is set once the result was taken on its own.
+	downloaded bool
 }
 
 type lease struct {
@@ -568,6 +570,42 @@ func (d Download) Release() {
 	}
 }
 
+// TakeFile hands out the result of one done file once, for example a
+// single file of a batch. The result is deleted when Release is called;
+// the file stays in the job with downloaded set, and the job's ZIP
+// download leaves it out.
+func (m *Manager) TakeFile(jobID, fileID string) (Download, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, err := m.fileLocked(jobID, fileID)
+	if err != nil || f.job.downloading {
+		return Download{}, ErrNotFound
+	}
+	switch {
+	case f.downloaded:
+		return Download{}, ErrNotFound
+	case f.status != FileDone:
+		return Download{}, ErrNotReady
+	}
+	out, err := m.root.Open(f.output)
+	if err != nil {
+		return Download{}, err
+	}
+	name := f.outputName(uniqueNames{})
+	blob, size := f.output, f.outBytes
+	f.output, f.downloaded = "", true
+	m.signal()
+	return Download{
+		File: out, Size: size, Name: path.Base(name), ContentType: ContentType(f.out.Format),
+		release: func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			_ = m.root.Remove(blob)
+			m.stored -= size
+		},
+	}, nil
+}
+
 // OpenEntry opens a result of an archive download for reading.
 func (m *Manager) OpenEntry(e ZipEntry) (*os.File, error) {
 	return m.root.Open(e.blob)
@@ -589,6 +627,9 @@ func (m *Manager) TakeDownload(id string) (Download, error) {
 
 	if j.expected == 1 && len(j.files) == 1 && j.files[0].kind == KindImage {
 		f := j.files[0]
+		if f.downloaded {
+			return Download{}, ErrNotFound
+		}
 		if f.status != FileDone {
 			return Download{}, ErrNoResult
 		}

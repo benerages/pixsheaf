@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +198,52 @@ func TestUploadKeepsFolders(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&f)
 	if f.Source == nil || *f.Source != "a/b/c/photo.png" {
 		t.Errorf("source %v", f.Source)
+	}
+}
+
+func TestDownloadSingleFileOfBatch(t *testing.T) {
+	e := newAPI(t, Options{})
+	body := `{"pipeline":` + emptyPipeline + `,"expectedFiles":2}`
+	resp := e.do(t, "POST", "/api/v1/jobs", "", "application/json", strings.NewReader(body))
+	var jc api.JobCreated
+	_ = json.NewDecoder(resp.Body).Decode(&jc)
+	var ids []string
+	for _, name := range []string{"a.png", "b.png"} {
+		resp := e.upload(t, jc.Job.Id, jc.Token, name, pngHeader)
+		var f api.JobFile
+		_ = json.NewDecoder(resp.Body).Decode(&f)
+		ids = append(ids, f.Id)
+	}
+	path := "/api/v1/jobs/" + jc.Job.Id + "/files/" + ids[0] + "/download"
+	expect(t, e.do(t, "GET", path, jc.Token, "", nil), http.StatusConflict, codeFileNotDone)
+	e.work(t, jobproto.Response{Output: &jobproto.ImageInfo{Format: "png", Width: 1, Height: 1, Pages: 1}}, "first")
+	e.work(t, jobproto.Response{Output: &jobproto.ImageInfo{Format: "png", Width: 1, Height: 1, Pages: 1}}, "second")
+
+	// With the cookie, as a plain link would.
+	resp = e.do(t, "GET", path, "", "", nil, "Cookie", "pixsheaf_job="+jc.Token)
+	expect(t, resp, http.StatusOK, "")
+	if b, _ := io.ReadAll(resp.Body); string(b) != "first" || !strings.Contains(resp.Header.Get("Content-Disposition"), `filename="a.png"`) {
+		t.Fatalf("file download %q %v", b, resp.Header)
+	}
+	expect(t, e.do(t, "GET", path, jc.Token, "", nil), http.StatusNotFound, codeNotFound)
+
+	resp = e.do(t, "GET", "/api/v1/jobs/"+jc.Job.Id, jc.Token, "", nil)
+	var job api.Job
+	_ = json.NewDecoder(resp.Body).Decode(&job)
+	if job.Files[0].Downloaded == nil || !*job.Files[0].Downloaded || job.Files[1].Downloaded != nil {
+		t.Errorf("downloaded flags %+v", job.Files)
+	}
+	// The ZIP leaves the downloaded file out.
+	resp = e.do(t, "GET", "/api/v1/jobs/"+jc.Job.Id+"/download", jc.Token, "", nil)
+	data, _ := io.ReadAll(resp.Body)
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(zr.File) != 2 || zr.File[0].Name != "b.png" || zr.File[1].Name != "report.json" {
+		t.Errorf("archive %v", zr.File)
+	}
+	if entries, _ := os.ReadDir(e.dir); len(entries) != 0 {
+		t.Errorf("%d files left", len(entries))
 	}
 }

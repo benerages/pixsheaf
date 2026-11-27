@@ -36,8 +36,10 @@ type File struct {
 	// came from an archive.
 	Kind      string
 	ArchiveID string
-	ErrorCode string
-	ErrorMsg  string
+	// Downloaded is set once the result was downloaded on its own.
+	Downloaded bool
+	ErrorCode  string
+	ErrorMsg   string
 }
 
 // status derives the job status from its files.
@@ -70,7 +72,7 @@ func (j *job) snapshot() Job {
 
 func (f *file) snapshot() File {
 	s := File{
-		ID: f.id, Index: f.index, Kind: f.kind, ArchiveID: f.archive, Status: f.status,
+		ID: f.id, Index: f.index, Kind: f.kind, ArchiveID: f.archive, Status: f.status, Downloaded: f.downloaded,
 		InputBytes: f.inBytes, InputFormat: f.inFormat,
 		ErrorCode: f.errCode, ErrorMsg: f.errMsg,
 	}

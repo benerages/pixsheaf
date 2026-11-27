@@ -1,1 +1,70 @@
 @import "tailwindcss";
+
+/* Pixsheaf theme: calm and reduced, petrol accent (Phase 5). Light and
+   dark follow the system setting (prefers-color-scheme). Contrast of
+   accent text and buttons is at least 4.5:1 in both schemes (WCAG 2.2 AA). */
+@theme {
+  --color-accent-50: #eef8f8;
+  --color-accent-100: #d5eeee;
+  --color-accent-200: #aedcdd;
+  --color-accent-300: #7cc3c6;
+  --color-accent-400: #4aa5a9;
+  --color-accent-500: #2b8a8f;
+  --color-accent-600: #1d6f74;
+  --color-accent-700: #195a5f;
+  --color-accent-800: #18494d;
+  --color-accent-900: #163d41;
+  --color-accent-950: #0a2427;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent-600 dark:outline-accent-300;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Component classes; @utility so they can be combined with @apply. */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-accent-700 text-white hover:bg-accent-800 dark:bg-accent-300 dark:text-accent-950 dark:hover:bg-accent-200;
+}
+
+@utility btn-secondary {
+  @apply btn border border-stone-300 bg-white text-stone-800 hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800;
+}
+
+@utility btn-quiet {
+  @apply btn px-2 text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100;
+}
+
+@utility field {
+  @apply block w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100;
+}
+
+@utility label {
+  @apply mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300;
+}
+
+@utility card {
+  @apply rounded-2xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900;
+}
+
+@utility muted {
+  @apply text-stone-600 dark:text-stone-400;
+}
