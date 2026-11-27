@@ -2,6 +2,8 @@
 
 package imaging
 
+import "github.com/benerages/pixsheaf/internal/pipeline"
+
 // Init reports that libvips is not available in this build.
 func Init() error { return ErrUnavailable }
 
@@ -13,6 +15,11 @@ func FindLoader([]byte) (string, error) { return "", ErrUnavailable }
 
 // Inspect reports that libvips is not available in this build.
 func Inspect([]byte) (Info, error) { return Info{}, ErrUnavailable }
+
+// Process reports that libvips is not available in this build.
+func Process([]byte, pipeline.Pipeline, ProcessLimits) (Output, error) {
+	return Output{}, ErrUnavailable
+}
 
 // Probe reports that libvips is not available in this build.
 func Probe() []ProbeResult {

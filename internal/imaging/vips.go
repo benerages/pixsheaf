@@ -51,12 +51,14 @@ static int px_header(const void *buf, size_t len, int *width, int *height, int *
 	return 0;
 }
 
-// px_save_blank encodes a size x size black RGB image with the saver that
-// matches suffix. The caller frees *buf with g_free.
-static int px_save_blank(const char *suffix, int size, void **buf, size_t *len) {
+// px_save_rect encodes a width x height black RGB image with one EXIF
+// field, using the saver that matches suffix. The caller frees *buf with
+// g_free.
+static int px_save_rect(const char *suffix, int width, int height, void **buf, size_t *len) {
 	VipsImage *img = NULL;
-	if (vips_black(&img, size, size, "bands", 3, NULL))
+	if (vips_black(&img, width, height, "bands", 3, NULL))
 		return -1;
+	vips_image_set_string(img, "exif-ifd0-ImageDescription", "pixsheaf");
 	int r = vips_image_write_to_buffer(img, suffix, buf, len, NULL);
 	g_object_unref(img);
 	return r;
@@ -221,11 +223,16 @@ func Probe() []ProbeResult {
 
 // saveBlank encodes a blank size x size image with the saver for suffix.
 func saveBlank(suffix string, size int) ([]byte, error) {
+	return saveRect(suffix, size, size)
+}
+
+// saveRect encodes a blank width x height image with the saver for suffix.
+func saveRect(suffix string, width, height int) ([]byte, error) {
 	cs := C.CString(suffix)
 	defer C.free(unsafe.Pointer(cs))
 	var p unsafe.Pointer
 	var n C.size_t
-	if C.px_save_blank(cs, C.int(size), &p, &n) != 0 {
+	if C.px_save_rect(cs, C.int(width), C.int(height), &p, &n) != 0 {
 		return nil, fmt.Errorf("imaging: save %s: %s", suffix, lastError())
 	}
 	defer C.g_free(C.gpointer(p))

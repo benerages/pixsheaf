@@ -18,6 +18,37 @@ var ErrUnsupported = errors.New("imaging: no allowed loader accepts the input")
 // ErrDecode means that an allowed loader rejected the input as broken.
 var ErrDecode = errors.New("imaging: the image could not be decoded")
 
+// ErrTooManyPixels means that an input or result exceeds a pixel limit.
+var ErrTooManyPixels = errors.New("imaging: too many pixels")
+
+// ErrEncode means that the output could not be encoded.
+var ErrEncode = errors.New("imaging: the image could not be encoded")
+
+// ErrInvalidInput means that a step does not fit the image, for example a
+// crop rectangle outside it.
+var ErrInvalidInput = errors.New("imaging: the step does not fit the image")
+
+// ErrNotImplemented marks pipeline features that follow in a later step of
+// Phase 3 (watermark, target size, BMP and PDF output, animation).
+var ErrNotImplemented = errors.New("imaging: not implemented yet")
+
+// ProcessLimits bound Process. Zero means no limit.
+type ProcessLimits struct {
+	// MaxInputPixels bounds width x height x pages of the input, checked
+	// from the header before decoding.
+	MaxInputPixels int64
+	// MaxOutputPixels bounds every intermediate and the final result.
+	MaxOutputPixels int64
+}
+
+// Output is an encoded result.
+type Output struct {
+	Data   []byte
+	Format string
+	Width  int
+	Height int
+}
+
 // Info describes an image header.
 type Info struct {
 	// Format is an input format name from api/openapi.yaml: jpeg, png,

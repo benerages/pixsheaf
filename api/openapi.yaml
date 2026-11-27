@@ -730,6 +730,7 @@ components:
             - decode_failed
             - encode_failed
             - target_size_unreachable
+            - step_not_applicable
             - timeout
             - internal
         message:
@@ -1157,7 +1158,9 @@ components:
           minimum: 1
           maximum: 100
         lossless:
-          description: Lossless mode for webp, avif, and jxl.
+          description: >-
+            Lossless mode for webp and jxl (png, gif, tiff, and bmp are always
+            lossless). Not available for jpeg, avif, and pdf.
           type: boolean
           default: false
         optimize:

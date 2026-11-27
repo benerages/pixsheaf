@@ -11,6 +11,7 @@ import (
 
 	"github.com/benerages/pixsheaf/internal/imaging"
 	"github.com/benerages/pixsheaf/internal/jobproto"
+	"github.com/benerages/pixsheaf/internal/pipeline"
 	"github.com/benerages/pixsheaf/internal/sandbox"
 )
 
@@ -72,6 +73,8 @@ func handle(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 		return jobproto.Response{Sandbox: &r}, nil
 	case jobproto.OpInspect:
 		return inspect(req, input), nil
+	case jobproto.OpProcess:
+		return process(req, input)
 	default:
 		return failure(jobproto.CodeInternal, fmt.Sprintf("unknown operation %q", req.Op)), nil
 	}
@@ -97,6 +100,39 @@ func inspect(req jobproto.Request, input []byte) jobproto.Response {
 		Height: info.Height,
 		Pages:  info.Pages,
 	}}
+}
+
+func process(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
+	// Hard limits only; the API has already applied the operator limits.
+	p, err := pipeline.Parse(req.Pipeline, pipeline.Limits{})
+	if err != nil {
+		// The API validates first, so this means a version mismatch.
+		return failure(jobproto.CodeInternal, err.Error()), nil
+	}
+	out, err := imaging.Process(input, p, imaging.ProcessLimits{
+		MaxInputPixels:  req.MaxPixels,
+		MaxOutputPixels: req.MaxOutputPixels,
+	})
+	switch {
+	case err == nil:
+		return jobproto.Response{Output: &jobproto.ImageInfo{
+			Format: out.Format, Width: out.Width, Height: out.Height, Pages: 1,
+		}}, out.Data
+	case errors.Is(err, imaging.ErrUnsupported):
+		return failure(jobproto.CodeUnsupportedFormat, "the file is not an allowed image format"), nil
+	case errors.Is(err, imaging.ErrTooManyPixels):
+		return failure(jobproto.CodeTooManyPixels, err.Error()), nil
+	case errors.Is(err, imaging.ErrDecode):
+		return failure(jobproto.CodeDecodeFailed, "the image could not be decoded"), nil
+	case errors.Is(err, imaging.ErrEncode):
+		return failure(jobproto.CodeEncodeFailed, "the image could not be encoded"), nil
+	case errors.Is(err, imaging.ErrInvalidInput):
+		return failure(jobproto.CodeStepNotApplicable, err.Error()), nil
+	case errors.Is(err, imaging.ErrNotImplemented):
+		return failure(jobproto.CodeInternal, err.Error()), nil
+	default:
+		return failure(jobproto.CodeInternal, "image processing failed"), nil
+	}
 }
 
 func failure(code, message string) jobproto.Response {

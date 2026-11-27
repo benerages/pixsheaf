@@ -84,6 +84,7 @@ const (
 	EncodeFailed          FileErrorCode = "encode_failed"
 	FormatDisabled        FileErrorCode = "format_disabled"
 	Internal              FileErrorCode = "internal"
+	StepNotApplicable     FileErrorCode = "step_not_applicable"
 	TargetSizeUnreachable FileErrorCode = "target_size_unreachable"
 	Timeout               FileErrorCode = "timeout"
 	TooLarge              FileErrorCode = "too_large"
@@ -102,6 +103,8 @@ func (e FileErrorCode) Valid() bool {
 	case FormatDisabled:
 		return true
 	case Internal:
+		return true
+	case StepNotApplicable:
 		return true
 	case TargetSizeUnreachable:
 		return true
@@ -500,7 +503,7 @@ type ConvertParams struct {
 	// Format Formats that can be produced. `pdf` embeds the image in a one-page PDF.
 	Format OutputFormat `json:"format"`
 
-	// Lossless Lossless mode for webp, avif, and jxl.
+	// Lossless Lossless mode for webp and jxl (png, gif, tiff, and bmp are always lossless). Not available for jpeg, avif, and pdf.
 	Lossless *bool `json:"lossless,omitempty"`
 
 	// Optimize Spend more CPU time for a smaller file without changing pixels (PNG compression level and palette search, JPEG optimized Huffman tables, effort for webp, avif, and jxl).

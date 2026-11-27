@@ -3,13 +3,14 @@ package jobproto
 import (
 	"bytes"
 	"encoding/binary"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestHeaderRoundTrip(t *testing.T) {
 	var buf bytes.Buffer
-	in := Request{Op: OpInspect, InputBytes: 42, MaxPixels: 1000}
+	in := Request{Op: OpProcess, InputBytes: 42, MaxPixels: 1000, Pipeline: []byte(`{"version":1,"steps":[]}`)}
 	if err := WriteHeader(&buf, in); err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +19,7 @@ func TestHeaderRoundTrip(t *testing.T) {
 	if err := ReadHeader(&buf, &out); err != nil {
 		t.Fatal(err)
 	}
-	if out != in {
+	if !reflect.DeepEqual(out, in) {
 		t.Errorf("got %+v, want %+v", out, in)
 	}
 	if buf.String() != "payload" {

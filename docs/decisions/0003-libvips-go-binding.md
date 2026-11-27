@@ -28,3 +28,7 @@ Use vipsgen v2 (`github.com/cshum/vipsgen/v2/vips`, pinned at ≥ v2.1.3) agains
 ## Consequences
 
 Both viable bindings depend on a single maintainer. The mitigation is that vipsgen is generated and MIT-licensed, so it can be forked and regenerated. The v2 API is new, so expect churn. Both bindings recently shipped memory fixes, so the binding stays inside the sandbox. Before approval, check the open-issue backlog by hand, because the GitHub API was unreachable during research.
+
+## Amendment 2026-11-27: direct cgo instead of vipsgen (Phase 3)
+
+Pixsheaf calls libvips through a small cgo layer in `internal/imaging` instead of vipsgen. The pipeline needs about fifteen operations (load, autorot, resize, extract and smart crop, rotate, flip, ICC transform and colourspace, flatten, composite, and seven savers), and the cgo shim for blocking untrusted operations had to exist anyway. Writing the calls directly avoids a large generated dependency whose v2 API is new and changing, keeps every libvips option Pixsheaf uses visible in one place for review, and lets the build fail on libvips API changes instead of on binding regeneration. The C wrappers take fixed argument lists (no variadic calls from Go), copy input into C memory before lazy decoding, and release every image reference. vipsgen remains the fallback if the operation set grows substantially.

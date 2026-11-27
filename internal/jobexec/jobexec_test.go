@@ -147,3 +147,41 @@ func TestOversizedOutputIsRejected(t *testing.T) {
 		t.Fatal("Run succeeded, want an output size error")
 	}
 }
+
+func TestProcessInJobProcess(t *testing.T) {
+	req := jobproto.Request{
+		Op:       jobproto.OpProcess,
+		Pipeline: []byte(`{"version":1,"steps":[{"op":"rotate","params":{"angle":90}},{"op":"convert","params":{"format":"webp"}}]}`),
+	}
+	resp, out, err := testRunner(t).Run(t.Context(), req, samplePNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imaging.LibraryVersion() == "none" {
+		if resp.Error == nil || resp.Error.Code != jobproto.CodeInternal {
+			t.Fatalf("without libvips: response = %+v, want an internal error", resp)
+		}
+		return
+	}
+	if resp.Error != nil || resp.Output == nil {
+		t.Fatalf("response = %+v", resp)
+	}
+	if got := *resp.Output; got != (jobproto.ImageInfo{Format: "webp", Width: 3, Height: 2, Pages: 1}) {
+		t.Errorf("output = %+v, want webp 3x2", got)
+	}
+	info, err := imaging.Inspect(out)
+	if err != nil || info.Format != "webp" || info.Width != 3 || info.Height != 2 {
+		t.Errorf("returned bytes: %+v, %v", info, err)
+	}
+}
+
+func TestProcessRejectsInvalidPipeline(t *testing.T) {
+	req := jobproto.Request{Op: jobproto.OpProcess, Pipeline: []byte(`{"version":1,"steps":[{"op":"explode"}]}`)}
+	resp, _, err := testRunner(t).Run(t.Context(), req, samplePNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil || resp.Error.Code != jobproto.CodeInternal {
+		t.Errorf("response = %+v, want an internal error", resp)
+	}
+}

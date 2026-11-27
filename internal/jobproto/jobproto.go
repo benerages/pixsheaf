@@ -28,6 +28,8 @@ const (
 	// OpSandboxCheck reports the restrictions in effect inside the job
 	// process; used by the container self-check.
 	OpSandboxCheck Op = "sandbox-check"
+	// OpProcess runs a pipeline and returns the encoded result.
+	OpProcess Op = "process"
 )
 
 // Request is sent by the supervisor.
@@ -35,15 +37,21 @@ type Request struct {
 	Op Op `json:"op"`
 	// InputBytes is the exact number of input bytes after the header.
 	InputBytes int64 `json:"inputBytes"`
-	// MaxPixels bounds width x height x pages for OpInspect; zero means
-	// no limit.
+	// MaxPixels bounds width x height x pages of the input for OpInspect
+	// and OpProcess; zero means no limit.
 	MaxPixels int64 `json:"maxPixels,omitempty"`
+	// MaxOutputPixels bounds intermediate and final results of OpProcess.
+	MaxOutputPixels int64 `json:"maxOutputPixels,omitempty"`
+	// Pipeline is the pipeline document for OpProcess (api/openapi.yaml).
+	// The job process validates it again.
+	Pipeline json.RawMessage `json:"pipeline,omitempty"`
 }
 
 // Response is sent by the job process.
 type Response struct {
 	Error   *Error          `json:"error,omitempty"`
 	Image   *ImageInfo      `json:"image,omitempty"`
+	Output  *ImageInfo      `json:"output,omitempty"`
 	Sandbox *sandbox.Report `json:"sandbox,omitempty"`
 	// OutputBytes is the exact number of output bytes after the header.
 	OutputBytes int64 `json:"outputBytes"`
@@ -54,6 +62,8 @@ const (
 	CodeUnsupportedFormat = "unsupported_format"
 	CodeTooManyPixels     = "too_many_pixels"
 	CodeDecodeFailed      = "decode_failed"
+	CodeEncodeFailed      = "encode_failed"
+	CodeStepNotApplicable = "step_not_applicable"
 	CodeInternal          = "internal"
 )
 

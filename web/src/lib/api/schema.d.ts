@@ -266,7 +266,7 @@ export interface components {
              * @description Stable machine-readable reason.
              * @enum {string}
              */
-            code: "unsupported_format" | "format_disabled" | "too_large" | "too_many_pixels" | "too_many_frames" | "decode_failed" | "encode_failed" | "target_size_unreachable" | "timeout" | "internal";
+            code: "unsupported_format" | "format_disabled" | "too_large" | "too_many_pixels" | "too_many_frames" | "decode_failed" | "encode_failed" | "target_size_unreachable" | "step_not_applicable" | "timeout" | "internal";
             /** @description Human-readable explanation (English). Never contains file contents or paths. */
             message: string;
         };
@@ -492,7 +492,7 @@ export interface components {
             /** @description Quality for lossy formats (jpeg, webp, avif, jxl, and pdf with a JPEG image). */
             quality?: number;
             /**
-             * @description Lossless mode for webp, avif, and jxl.
+             * @description Lossless mode for webp and jxl (png, gif, tiff, and bmp are always lossless). Not available for jpeg, avif, and pdf.
              * @default false
              */
             lossless: boolean;
