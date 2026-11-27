@@ -178,7 +178,7 @@ export interface components {
          */
         InputFormat: "jpeg" | "png" | "webp" | "gif" | "tiff" | "bmp" | "avif" | "heif" | "jxl";
         /**
-         * @description Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`.
+         * @description Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`. Animated GIF and WebP input stays animated when the output is `gif` or `webp` (every step runs on every frame; frame delays and the loop count are kept, and content-aware crop gravities fall back to `center` so that the frames stay aligned). Other output formats get the first frame. Animations with more frames than the limit fail with `too_many_frames`.
          * @enum {string}
          */
         OutputFormat: "jpeg" | "png" | "webp" | "gif" | "tiff" | "bmp" | "avif" | "jxl" | "pdf";

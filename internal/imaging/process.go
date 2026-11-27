@@ -26,6 +26,28 @@ static int px_load(const void *buf, size_t len, VipsImage **out) {
 	return *out ? 0 : -1;
 }
 
+// All pages, as one tall image with page-height set (animations).
+static int px_load_all(const void *buf, size_t len, VipsImage **out) {
+	*out = vips_image_new_from_buffer(buf, len, "", "n", -1, "fail_on", VIPS_FAIL_ON_ERROR, NULL);
+	return *out ? 0 : -1;
+}
+
+// px_join stacks equally sized frames into one animation. Frame delays and
+// the loop count come from the first frame, which carries the metadata of
+// the loaded animation.
+static int px_join(VipsImage **frames, int n, VipsImage **out) {
+	VipsImage *t = NULL;
+	if (vips_arrayjoin(frames, &t, n, "across", 1, NULL))
+		return -1;
+	int r = vips_copy(t, out, NULL);
+	g_object_unref(t);
+	if (r)
+		return r;
+	vips_image_set_int(*out, VIPS_META_PAGE_HEIGHT, vips_image_get_height(frames[0]));
+	vips_image_set_int(*out, VIPS_META_N_PAGES, n);
+	return 0;
+}
+
 static int px_autorot(VipsImage *in, VipsImage **out) {
 	return vips_autorot(in, out, NULL);
 }
@@ -203,9 +225,16 @@ func (im *image) isCMYK() bool {
 }
 
 // session owns the C buffers libvips reads lazily from until the output is
-// encoded.
+// encoded, and per-step state shared by all frames of an animation.
 type session struct {
 	bufs []unsafe.Pointer
+	// animated disables content-aware cropping, which would pick a
+	// different area in every frame.
+	animated bool
+	// step is the index of the running step; overlays caches the prepared
+	// watermark of each step.
+	step     int
+	overlays map[int]*image
 }
 
 // cbytes returns a C copy of b that lives until free.
@@ -216,6 +245,10 @@ func (s *session) cbytes(b []byte) unsafe.Pointer {
 }
 
 func (s *session) free() {
+	for _, ov := range s.overlays {
+		ov.close()
+	}
+	s.overlays = nil
 	for _, p := range s.bufs {
 		C.free(p)
 	}
@@ -233,9 +266,18 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 		return Output{}, fmt.Errorf("%w: input has %dx%d pixels in %d pages", ErrTooManyPixels, info.Width, info.Height, info.Pages)
 	}
 
-	// libvips decodes lazily and keeps reading the buffer until the output
-	// is encoded, so it gets a C copy instead of a Go pointer.
-	s := &session{}
+	// GIF and WebP animations are processed frame by frame; for every other
+	// multi-page input (TIFF, HEIF) only the first page is used.
+	animated := info.Pages > 1 && (info.Format == "gif" || info.Format == "webp")
+	maxFrames := MaxFrames
+	if lim.MaxFrames > 0 && lim.MaxFrames < maxFrames {
+		maxFrames = lim.MaxFrames
+	}
+	if animated && info.Pages > maxFrames {
+		return Output{}, fmt.Errorf("%w: %d frames, the limit is %d", ErrTooManyFrames, info.Pages, maxFrames)
+	}
+
+	s := &session{animated: animated}
 	defer s.free()
 	im := &image{}
 	if info.Format == "bmp" {
@@ -245,27 +287,63 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 		// Return the decoded Go copy to the OS before libvips allocates.
 		debug.FreeOSMemory()
 	} else {
-		buf := s.cbytes(input)
-		if C.px_load(buf, C.size_t(len(input)), &im.p) != 0 {
+		// libvips decodes lazily and keeps reading the buffer until the
+		// output is encoded, so it gets a C copy instead of a Go pointer.
+		buf, n := s.cbytes(input), C.size_t(len(input))
+		var rc C.int
+		if animated {
+			rc = C.px_load_all(buf, n, &im.p)
+		} else {
+			rc = C.px_load(buf, n, &im.p)
+		}
+		if rc != 0 {
 			return Output{}, fmt.Errorf("%w: %s", ErrDecode, lastError())
 		}
 	}
-	defer im.close()
+	frames := []*image{im}
+	if animated {
+		frames, err = splitFrames(im, maxFrames)
+		im.close()
+		if err != nil {
+			return Output{}, err
+		}
+	}
+	defer func() {
+		for _, f := range frames {
+			f.close()
+		}
+	}()
 
 	format := pipeline.DefaultOutputFormat(info.Format)
 	var conv pipeline.Convert
 	for i, step := range p.Steps {
-		cur := im.size()
+		cur := frames[0].size()
 		if !step.When.Matches(pipeline.Facts{Size: cur, SourceFormat: info.Format}) {
 			continue
 		}
-		if err := runStep(s, im, step, cur, lim); err != nil {
-			return Output{}, fmt.Errorf("step %d (%s): %w", i, step.Op, err)
+		s.step = i
+		for _, f := range frames {
+			if err := runStep(s, f, step, cur, lim); err != nil {
+				return Output{}, fmt.Errorf("step %d (%s): %w", i, step.Op, err)
+			}
 		}
 		if step.Convert != nil {
 			conv = *step.Convert
 			format = conv.Format
 		}
+	}
+
+	// Only GIF and WebP output keep the animation; other formats get the
+	// first frame (the other frames are never decoded).
+	frameSize, pages := frames[0].size(), 1
+	im = frames[0]
+	if len(frames) > 1 && (format == "gif" || format == "webp") {
+		joined, err := joinFrames(frames)
+		if err != nil {
+			return Output{}, err
+		}
+		defer joined.close()
+		im, pages = joined, len(frames)
 	}
 
 	saver, ok := saveFormats[format]
@@ -314,7 +392,45 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	if err != nil {
 		return Output{}, err
 	}
-	return Output{Data: data, Format: format, Width: final.Width, Height: final.Height}, nil
+	return Output{Data: data, Format: format, Width: frameSize.Width, Height: frameSize.Height, Pages: pages}, nil
+}
+
+// splitFrames cuts a loaded animation into its frames.
+func splitFrames(strip *image, maxFrames int) ([]*image, error) {
+	size := strip.size()
+	pageHeight := int(C.vips_image_get_page_height(strip.p))
+	if pageHeight < 1 || size.Height%pageHeight != 0 {
+		return nil, fmt.Errorf("%w: inconsistent frame height", ErrDecode)
+	}
+	n := size.Height / pageHeight
+	if n > maxFrames {
+		return nil, fmt.Errorf("%w: %d frames, the limit is %d", ErrTooManyFrames, n, maxFrames)
+	}
+	frames := make([]*image, 0, n)
+	for i := range n {
+		f := &image{}
+		if C.px_extract(strip.p, &f.p, 0, C.int(i*pageHeight), C.int(size.Width), C.int(pageHeight)) != 0 {
+			for _, g := range frames {
+				g.close()
+			}
+			return nil, fmt.Errorf("%w: frame %d: %s", ErrDecode, i, lastError())
+		}
+		frames = append(frames, f)
+	}
+	return frames, nil
+}
+
+// joinFrames stacks processed frames into one animation.
+func joinFrames(frames []*image) (*image, error) {
+	ptrs := make([]*C.VipsImage, len(frames))
+	for i, f := range frames {
+		ptrs[i] = f.p
+	}
+	joined := &image{}
+	if C.px_join(&ptrs[0], C.int(len(ptrs)), &joined.p) != 0 {
+		return nil, fmt.Errorf("join frames: %s", lastError())
+	}
+	return joined, nil
 }
 
 // loadBMP decodes a BMP in Go and copies it into libvips. The Go image is
@@ -439,7 +555,7 @@ func runStep(ses *session, im *image, s pipeline.Step, cur pipeline.Size, lim Pr
 			}
 		}
 		if plan.Crop != nil {
-			return crop(im, *plan.Crop, plan.Smart, res)
+			return crop(im, *plan.Crop, smartFor(ses, plan.Smart), res)
 		}
 		return nil
 	case pipeline.OpCrop:
@@ -447,7 +563,7 @@ func runStep(ses *session, im *image, s pipeline.Step, cur pipeline.Size, lim Pr
 		if !ok {
 			return fmt.Errorf("%w: the crop rectangle lies outside the %dx%d image", ErrInvalidInput, cur.Width, cur.Height)
 		}
-		return crop(im, box, smart, pipeline.Size{Width: box.Width, Height: box.Height})
+		return crop(im, box, smartFor(ses, smart), pipeline.Size{Width: box.Width, Height: box.Height})
 	case pipeline.OpRotate:
 		return im.apply("rotate", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_rot(in, out, C.int(s.Rotate)) })
 	case pipeline.OpFlip:
@@ -459,6 +575,16 @@ func runStep(ses *session, im *image, s pipeline.Step, cur pipeline.Size, lim Pr
 		return nil
 	}
 	return errors.New("unknown operation")
+}
+
+// smartFor turns content-aware cropping off for animations, where the
+// centered box (which Plan and Box return for attention and entropy) keeps
+// all frames aligned.
+func smartFor(ses *session, smart string) string {
+	if ses.animated {
+		return ""
+	}
+	return smart
 }
 
 func crop(im *image, box pipeline.Box, smart string, size pipeline.Size) error {

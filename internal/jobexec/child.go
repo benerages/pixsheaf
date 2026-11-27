@@ -94,6 +94,13 @@ func inspect(req jobproto.Request, input []byte) jobproto.Response {
 	if req.MaxPixels > 0 && pixels > req.MaxPixels {
 		return failure(jobproto.CodeTooManyPixels, fmt.Sprintf("the image has %d pixels; the limit is %d", pixels, req.MaxPixels))
 	}
+	maxFrames := imaging.MaxFrames
+	if req.MaxFrames > 0 && req.MaxFrames < maxFrames {
+		maxFrames = req.MaxFrames
+	}
+	if (info.Format == "gif" || info.Format == "webp") && info.Pages > maxFrames {
+		return failure(jobproto.CodeTooManyFrames, fmt.Sprintf("the animation has %d frames; the limit is %d", info.Pages, maxFrames))
+	}
 	return jobproto.Response{Image: &jobproto.ImageInfo{
 		Format: info.Format,
 		Width:  info.Width,
@@ -112,16 +119,19 @@ func process(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 	out, err := imaging.Process(input, p, imaging.ProcessLimits{
 		MaxInputPixels:  req.MaxPixels,
 		MaxOutputPixels: req.MaxOutputPixels,
+		MaxFrames:       req.MaxFrames,
 	})
 	switch {
 	case err == nil:
 		return jobproto.Response{Output: &jobproto.ImageInfo{
-			Format: out.Format, Width: out.Width, Height: out.Height, Pages: 1,
+			Format: out.Format, Width: out.Width, Height: out.Height, Pages: out.Pages,
 		}}, out.Data
 	case errors.Is(err, imaging.ErrUnsupported):
 		return failure(jobproto.CodeUnsupportedFormat, "the file is not an allowed image format"), nil
 	case errors.Is(err, imaging.ErrTooManyPixels):
 		return failure(jobproto.CodeTooManyPixels, err.Error()), nil
+	case errors.Is(err, imaging.ErrTooManyFrames):
+		return failure(jobproto.CodeTooManyFrames, err.Error()), nil
 	case errors.Is(err, imaging.ErrDecode):
 		return failure(jobproto.CodeDecodeFailed, "the image could not be decoded"), nil
 	case errors.Is(err, imaging.ErrEncode):

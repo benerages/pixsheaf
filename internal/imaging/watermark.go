@@ -95,37 +95,18 @@ func watermark(ses *session, im *image, w pipeline.Watermark, cur pipeline.Size)
 	if availW < 1 || availH < 1 {
 		return fmt.Errorf("%w: the image is too small for the margin", ErrInvalidInput)
 	}
-	targetW := min(max(int(math.Round(float64(cur.Width)*w.Size/100)), 1), availW)
-
-	ov := &image{}
-	defer ov.close()
-	if w.Image != "" {
-		if err := loadOverlay(ses, ov, w.Image); err != nil {
+	// All frames of an animation have the same size, so the overlay of a
+	// step is prepared once and reused for every frame.
+	ov := ses.overlays[ses.step]
+	if ov == nil {
+		var err error
+		if ov, err = prepareOverlay(ses, w, cur.Width, availW, availH); err != nil {
 			return err
 		}
-	} else {
-		c, err := ParseColor(w.Color, 1)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		if ses.overlays == nil {
+			ses.overlays = map[int]*image{}
 		}
-		img, err := RenderText(w.Text, c, targetW, availH)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-		t, err := fromGo(img)
-		if err != nil {
-			return fmt.Errorf("watermark text: %w", err)
-		}
-		ov.p, t.p = t.p, nil
-	}
-
-	src := ov.size()
-	scale := min(float64(targetW)/float64(src.Width), float64(availH)/float64(src.Height))
-	finalW := max(int(float64(src.Width)*scale), 1)
-	if err := ov.apply("prepare watermark", func(in *C.VipsImage, out **C.VipsImage) C.int {
-		return C.px_overlay_prepare(in, out, C.int(finalW), C.double(w.Opacity))
-	}); err != nil {
-		return err
+		ses.overlays[ses.step] = ov
 	}
 
 	// Composite works in sRGB; convert CMYK first so that the embedded
@@ -139,6 +120,40 @@ func watermark(ses *session, im *image, w pipeline.Watermark, cur pipeline.Size)
 	return im.apply("watermark", func(in *C.VipsImage, out **C.VipsImage) C.int {
 		return C.px_composite(in, ov.p, out, C.int(box.Left), C.int(box.Top))
 	})
+}
+
+// prepareOverlay loads or renders the watermark and scales it to its final
+// size: w.Size percent of width, shrunk to fit availW x availH.
+func prepareOverlay(ses *session, w pipeline.Watermark, width, availW, availH int) (*image, error) {
+	targetW := min(max(int(math.Round(float64(width)*w.Size/100)), 1), availW)
+	ov := &image{}
+	if w.Image != "" {
+		if err := loadOverlay(ses, ov, w.Image); err != nil {
+			return nil, err
+		}
+	} else {
+		c, err := ParseColor(w.Color, 1)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		img, err := RenderText(w.Text, c, targetW, availH)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		if ov, err = fromGo(img); err != nil {
+			return nil, fmt.Errorf("watermark text: %w", err)
+		}
+	}
+	src := ov.size()
+	scale := min(float64(targetW)/float64(src.Width), float64(availH)/float64(src.Height))
+	finalW := max(int(float64(src.Width)*scale), 1)
+	if err := ov.apply("prepare watermark", func(in *C.VipsImage, out **C.VipsImage) C.int {
+		return C.px_overlay_prepare(in, out, C.int(finalW), C.double(w.Opacity))
+	}); err != nil {
+		ov.close()
+		return nil, err
+	}
+	return ov, nil
 }
 
 // loadOverlay decodes a base64 PNG or WebP watermark into ov.

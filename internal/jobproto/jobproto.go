@@ -42,6 +42,9 @@ type Request struct {
 	MaxPixels int64 `json:"maxPixels,omitempty"`
 	// MaxOutputPixels bounds intermediate and final results of OpProcess.
 	MaxOutputPixels int64 `json:"maxOutputPixels,omitempty"`
+	// MaxFrames bounds the frames of animated GIF and WebP input; zero
+	// means the hard limit (imaging.MaxFrames).
+	MaxFrames int `json:"maxFrames,omitempty"`
 	// Pipeline is the pipeline document for OpProcess (api/openapi.yaml).
 	// The job process validates it again.
 	Pipeline json.RawMessage `json:"pipeline,omitempty"`
@@ -61,6 +64,7 @@ type Response struct {
 const (
 	CodeUnsupportedFormat = "unsupported_format"
 	CodeTooManyPixels     = "too_many_pixels"
+	CodeTooManyFrames     = "too_many_frames"
 	CodeDecodeFailed      = "decode_failed"
 	CodeEncodeFailed      = "encode_failed"
 	CodeStepNotApplicable = "step_not_applicable"

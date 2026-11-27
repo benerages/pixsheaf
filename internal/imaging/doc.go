@@ -32,9 +32,16 @@ var ErrInvalidInput = errors.New("imaging: the step does not fit the image")
 // within the requested target size.
 var ErrTargetUnreachable = errors.New("imaging: the target size cannot be reached")
 
-// ErrNotImplemented marks pipeline features that follow in a later step of
-// Phase 3 (animation).
-var ErrNotImplemented = errors.New("imaging: not implemented yet")
+// ErrTooManyFrames means that an animation has more frames than allowed.
+var ErrTooManyFrames = errors.New("imaging: too many frames")
+
+// ErrNotImplemented marks an output format without a saver; it should not
+// occur with a validated pipeline.
+var ErrNotImplemented = errors.New("imaging: not implemented")
+
+// MaxFrames is the hard limit for frames of an animation. Operators can
+// set a lower limit in ProcessLimits.
+const MaxFrames = 1000
 
 // ProcessLimits bound Process. Zero means no limit.
 type ProcessLimits struct {
@@ -43,14 +50,19 @@ type ProcessLimits struct {
 	MaxInputPixels int64
 	// MaxOutputPixels bounds every intermediate and the final result.
 	MaxOutputPixels int64
+	// MaxFrames bounds the frames of an animation (at most MaxFrames).
+	MaxFrames int
 }
 
 // Output is an encoded result.
 type Output struct {
 	Data   []byte
 	Format string
+	// Width and Height are the size of one frame.
 	Width  int
 	Height int
+	// Pages is the number of frames (1 unless an animation is kept).
+	Pages int
 }
 
 // Info describes an image header.
