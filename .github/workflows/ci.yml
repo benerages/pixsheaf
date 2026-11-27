@@ -19,6 +19,7 @@ jobs:
   go:
     name: Go (vet, test, vuln, staticcheck)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -48,6 +49,7 @@ jobs:
   golangci:
     name: golangci-lint
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -69,6 +71,7 @@ jobs:
   web:
     name: Web (lint, check, build, CSP)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     defaults:
@@ -109,6 +112,7 @@ jobs:
   dockerfiles:
     name: hadolint
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -128,6 +132,7 @@ jobs:
   workflows:
     name: zizmor (workflow security)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
@@ -143,6 +148,7 @@ jobs:
   secrets:
     name: gitleaks
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:

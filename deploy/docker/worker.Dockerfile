@@ -70,7 +70,7 @@ RUN fetch-source https://github.com/strukturag/libde265.git "$LIBDE265_VERSION" 
       -DENABLE_ENCODER=OFF \
       -DENABLE_SDL=OFF \
       -DENABLE_SHERLOCK265=OFF \
- && cmake --build libde265/build --parallel \
+ && cmake --build libde265/build --parallel "$(nproc)" \
  && cmake --install libde265/build
 
 # HEIF/AVIF with only the codecs Pixsheaf needs (ADR 0016): libde265 for
@@ -101,7 +101,7 @@ RUN fetch-source https://github.com/strukturag/libheif.git "$LIBHEIF_VERSION" "$
       -DWITH_FFMPEG_DECODER=OFF \
       -DWITH_KVAZAAR=OFF \
       -DWITH_UNCOMPRESSED_CODEC=OFF \
- && cmake --build libheif/build --parallel \
+ && cmake --build libheif/build --parallel "$(nproc)" \
  && cmake --install libheif/build
 
 # libvips with an explicit feature list: every loader and saver outside
