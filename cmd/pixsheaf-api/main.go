@@ -54,16 +54,16 @@ func serve() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
-	ln, err := transport.Listen(cfg.SocketPath)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	ln, err := transport.Listen(ctx, cfg.SocketPath)
 	if err != nil {
 		logger.Error("internal socket", "path", cfg.SocketPath, "err", err)
 		return 1
 	}
 	internal := transport.NewServer()
 	public := httpapi.New(cfg.ListenAddr, ui.FS(), logger)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	errc := make(chan error, 2)
 	go func() { errc <- internal.Serve(ln) }()
@@ -106,7 +106,7 @@ func healthcheck() int {
 		fmt.Fprintln(os.Stderr, "unhealthy:", err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintln(os.Stderr, "unhealthy: status", resp.StatusCode)
 		return 1

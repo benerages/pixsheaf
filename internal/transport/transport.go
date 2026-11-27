@@ -19,7 +19,7 @@ const PingPath = "/internal/v1/ping"
 
 // Listen creates the Unix socket at path, replacing a stale socket from a
 // previous run, and restricts it to owner and group (mode 0660).
-func Listen(path string) (net.Listener, error) {
+func Listen(ctx context.Context, path string) (net.Listener, error) {
 	if fi, err := os.Lstat(path); err == nil {
 		if fi.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("%s exists and is not a socket", path)
@@ -28,11 +28,14 @@ func Listen(path string) (net.Listener, error) {
 			return nil, err
 		}
 	}
-	ln, err := net.Listen("unix", path)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "unix", path)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(path, 0o660); err != nil {
+	// Mode 0660 as specified in ADR 0007: no world access; the group bit
+	// lets operators run workers under another UID in the service group.
+	if err := os.Chmod(path, 0o660); err != nil { //nolint:gosec // G302: socket mode fixed by ADR 0007
 		_ = ln.Close()
 		return nil, err
 	}
@@ -77,7 +80,7 @@ func Ping(ctx context.Context, c *http.Client) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
 	if resp.StatusCode != http.StatusOK || string(body) != "pong" {
 		return errors.New("unexpected ping response")

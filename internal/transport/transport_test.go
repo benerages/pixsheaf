@@ -10,7 +10,7 @@ import (
 
 func TestPingOverSocket(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "api.sock")
-	ln, err := Listen(sock)
+	ln, err := Listen(t.Context(), sock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,12 +36,12 @@ func TestPingOverSocket(t *testing.T) {
 func TestListenReplacesStaleSocketButNotFiles(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "api.sock")
-	ln, err := Listen(sock)
+	ln, err := Listen(t.Context(), sock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = ln.Close() // leaves a stale socket file behind on some systems
-	ln2, err := Listen(sock)
+	ln2, err := Listen(t.Context(), sock)
 	if err != nil {
 		t.Fatalf("second Listen: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestListenReplacesStaleSocketButNotFiles(t *testing.T) {
 	if err := os.WriteFile(regular, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Listen(regular); err == nil {
+	if _, err := Listen(t.Context(), regular); err == nil {
 		t.Fatal("Listen replaced a regular file")
 	}
 }

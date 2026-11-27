@@ -57,7 +57,7 @@ func Run(ctx context.Context, o Options) []Result {
 	add("api socket reachable", pingErr == nil, fmt.Sprint(pingErr))
 
 	probe := filepath.Join(filepath.Dir(o.SocketPath), ".selfcheck-write")
-	f, err := os.Create(probe)
+	f, err := os.Create(probe) //nolint:gosec // G304: path derives from the configured socket dir, not from user input
 	if f != nil {
 		_ = f.Close()
 		_ = os.Remove(probe)
@@ -80,7 +80,8 @@ func Run(ctx context.Context, o Options) []Result {
 	cancel()
 	add("dns blocked", dnsErr != nil, fmt.Sprint(dnsErr))
 	for _, target := range []string{"1.1.1.1:443", "[2606:4700:4700::1111]:443"} {
-		conn, err := net.DialTimeout("tcp", target, 3*time.Second)
+		d := net.Dialer{Timeout: 3 * time.Second}
+		conn, err := d.DialContext(ctx, "tcp", target)
 		if conn != nil {
 			_ = conn.Close()
 		}
@@ -100,7 +101,7 @@ func Run(ctx context.Context, o Options) []Result {
 	}
 	add("root filesystem read-only", err != nil, fmt.Sprint(err))
 
-	ok, info := tmpNoexec(o.NoopArgs)
+	ok, info := tmpNoexec(ctx, o.NoopArgs)
 	add("tmp writable and noexec", ok, info)
 	return rs
 }
@@ -114,9 +115,9 @@ func Print(w io.Writer, rs []Result) int {
 			mark = "FAIL"
 			failed++
 		}
-		fmt.Fprintf(w, "%s  %-34s %s\n", mark, r.Name, r.Info)
+		_, _ = fmt.Fprintf(w, "%s  %-34s %s\n", mark, r.Name, r.Info)
 	}
-	fmt.Fprintf(w, "selfcheck: %d of %d checks passed\n", len(rs)-failed, len(rs))
+	_, _ = fmt.Fprintf(w, "selfcheck: %d of %d checks passed\n", len(rs)-failed, len(rs))
 	return failed
 }
 
@@ -126,7 +127,7 @@ func procStatus() map[string]string {
 	if err != nil {
 		return m
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		if k, v, ok := strings.Cut(s.Text(), ":"); ok {
@@ -138,7 +139,7 @@ func procStatus() map[string]string {
 
 // tmpNoexec copies the running binary to /tmp and tries to execute it. The
 // images contain no shell, so a script would fail for the wrong reason.
-func tmpNoexec(noopArgs []string) (bool, string) {
+func tmpNoexec(ctx context.Context, noopArgs []string) (bool, string) {
 	self, err := os.ReadFile("/proc/self/exe")
 	if err != nil {
 		return false, "read self: " + err.Error()
@@ -146,11 +147,10 @@ func tmpNoexec(noopArgs []string) (bool, string) {
 	path := filepath.Join(os.TempDir(), ".selfcheck-exec")
 	// The copy must be executable for the probe to be meaningful.
 	if err := os.WriteFile(path, self, 0o700); err != nil { //nolint:gosec // G306: executable on purpose
-
 		return false, "write: " + err.Error()
 	}
-	defer os.Remove(path)
-	err = exec.Command(path, noopArgs...).Run() //nolint:gosec // G204: runs our own binary copy
+	defer func() { _ = os.Remove(path) }()
+	err = exec.CommandContext(ctx, path, noopArgs...).Run() //nolint:gosec // G204: runs our own binary copy
 	if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
 		return true, "exec denied"
 	}

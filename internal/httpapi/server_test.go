@@ -24,7 +24,7 @@ func TestHealthz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || string(body) != "ok\n" {
 		t.Fatalf("got %d %q", resp.StatusCode, body)
@@ -38,7 +38,7 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		want := map[string]string{
 			"Content-Security-Policy": ContentSecurityPolicy,
 			"X-Content-Type-Options":  "nosniff",
@@ -62,7 +62,7 @@ func TestOnlyGetAndHeadAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /healthz = %d, want 405", resp.StatusCode)
 	}
