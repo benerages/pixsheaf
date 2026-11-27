@@ -11,6 +11,9 @@ func LibraryVersion() string { return "none" }
 // FindLoader reports that libvips is not available in this build.
 func FindLoader([]byte) (string, error) { return "", ErrUnavailable }
 
+// Inspect reports that libvips is not available in this build.
+func Inspect([]byte) (Info, error) { return Info{}, ErrUnavailable }
+
 // Probe reports that libvips is not available in this build.
 func Probe() []ProbeResult {
 	return []ProbeResult{{Suffix: "libvips", Err: ErrUnavailable}}

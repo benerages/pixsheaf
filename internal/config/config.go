@@ -31,6 +31,8 @@ type Config struct {
 	JobTimeout time.Duration
 	// MaxConcurrency is the global number of files processed in parallel.
 	MaxConcurrency int
+	// JobMemoryMB caps the memory of one job process (RLIMIT_DATA).
+	JobMemoryMB int
 	// TrustedProxies lists the networks whose X-Forwarded-For is honored.
 	TrustedProxies []netip.Prefix
 	// LogLevel is the minimum log level.
@@ -71,6 +73,7 @@ var settings = map[string]setting{
 		return nil
 	}},
 	"MAX_CONCURRENCY": {"2", intIn(1, 256, func(c *Config, n int) { c.MaxConcurrency = n })},
+	"JOB_MEMORY_MB":   {"384", intIn(64, 65536, func(c *Config, n int) { c.JobMemoryMB = n })},
 	"TRUSTED_PROXIES": {"", func(c *Config, v string) error {
 		c.TrustedProxies = nil
 		for _, part := range strings.Split(v, ",") {

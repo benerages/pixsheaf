@@ -1,0 +1,149 @@
+package jobexec
+
+import (
+	"bytes"
+	"errors"
+	"image"
+	"image/png"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/benerages/pixsheaf/internal/imaging"
+	"github.com/benerages/pixsheaf/internal/jobproto"
+)
+
+// childEnvVar makes the test binary act as a job process.
+const childEnvVar = "PIXSHEAF_JOBEXEC_TEST_CHILD"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(childEnvVar) == "1" && len(os.Args) > 1 && os.Args[1] == "job" {
+		os.Exit(Child(os.Args[2:], os.Stdin, os.Stdout))
+	}
+	os.Exit(m.Run())
+}
+
+// testRunner runs the test binary itself as the job process. No memory
+// limit: the race detector reserves large mappings that RLIMIT_DATA counts.
+func testRunner(t *testing.T) Runner {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(20*time.Second, 0, 1<<20)
+	r.Path = exe
+	r.Env = append(r.Env, childEnvVar+"=1")
+	return r
+}
+
+func samplePNG(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestSandboxIsEnforcedInJobProcess(t *testing.T) {
+	resp, out, err := testRunner(t).Run(t.Context(), jobproto.Request{Op: jobproto.OpSandboxCheck}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error != nil || resp.Sandbox == nil || len(out) != 0 {
+		t.Fatalf("unexpected response: %+v, %d output bytes", resp, len(out))
+	}
+	s := resp.Sandbox
+	if !s.SocketDenied || !s.ExecDenied {
+		t.Errorf("seccomp filter not effective: %+v", s)
+	}
+	if s.CoreLimit != 0 || s.FileSizeLimit != 0 || s.OpenFilesLimit != 64 || s.CPULimit != 21 {
+		t.Errorf("resource limits not set: %+v", s)
+	}
+	if s.LandlockABI == 0 {
+		t.Log("Landlock is unavailable here; filesystem checks skipped (the container self-check requires it)")
+		return
+	}
+	if !s.FileCreateDenied || !s.OutsideReadDenied {
+		t.Errorf("Landlock not effective (ABI %d): %+v", s.LandlockABI, s)
+	}
+}
+
+func TestInspectInJobProcess(t *testing.T) {
+	resp, _, err := testRunner(t).Run(t.Context(), jobproto.Request{Op: jobproto.OpInspect}, samplePNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imaging.LibraryVersion() == "none" {
+		if resp.Error == nil || resp.Error.Code != jobproto.CodeInternal {
+			t.Fatalf("without libvips: response = %+v, want an internal error", resp)
+		}
+		return
+	}
+	if resp.Error != nil || resp.Image == nil {
+		t.Fatalf("response = %+v", resp)
+	}
+	if got := *resp.Image; got != (jobproto.ImageInfo{Format: "png", Width: 2, Height: 3, Pages: 1}) {
+		t.Errorf("image = %+v, want png 2x3, 1 page", got)
+	}
+}
+
+func TestInspectLimitsAndRejects(t *testing.T) {
+	if imaging.LibraryVersion() == "none" {
+		t.Skip("needs libvips")
+	}
+	r := testRunner(t)
+	resp, _, err := r.Run(t.Context(), jobproto.Request{Op: jobproto.OpInspect, MaxPixels: 5}, samplePNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil || resp.Error.Code != jobproto.CodeTooManyPixels {
+		t.Errorf("6 pixels with limit 5: response = %+v, want too_many_pixels", resp)
+	}
+	resp, _, err = r.Run(t.Context(), jobproto.Request{Op: jobproto.OpInspect}, []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"/>"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil || resp.Error.Code != jobproto.CodeUnsupportedFormat {
+		t.Errorf("SVG: response = %+v, want unsupported_format", resp)
+	}
+}
+
+func TestUnknownOperation(t *testing.T) {
+	resp, _, err := testRunner(t).Run(t.Context(), jobproto.Request{Op: "format-disk"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil || resp.Error.Code != jobproto.CodeInternal {
+		t.Errorf("response = %+v, want an internal error", resp)
+	}
+}
+
+func TestTimeoutKillsProcessGroup(t *testing.T) {
+	// The shell and its background child share the process group; both
+	// must be gone for Run to return promptly.
+	r := Runner{
+		Path:           "/bin/sh",
+		Args:           []string{"-c", "sleep 30 & sleep 30"},
+		Timeout:        500 * time.Millisecond,
+		MaxOutputBytes: 1,
+	}
+	start := time.Now()
+	_, _, err := r.Run(t.Context(), jobproto.Request{Op: jobproto.OpInspect}, nil)
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("err = %v, want ErrTimeout", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Run returned after %v; the process group was not killed", d)
+	}
+}
+
+func TestOversizedOutputIsRejected(t *testing.T) {
+	r := testRunner(t)
+	r.MaxOutputBytes = -1 // any announced output is too large
+	_, _, err := r.Run(t.Context(), jobproto.Request{Op: jobproto.OpSandboxCheck}, nil)
+	if err == nil {
+		t.Fatal("Run succeeded, want an output size error")
+	}
+}

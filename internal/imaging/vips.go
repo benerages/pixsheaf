@@ -25,6 +25,32 @@ static void px_allow(const char *name) {
 	vips_operation_block_set(name, FALSE);
 }
 
+// px_header opens buf lazily and reads only the header. Sequential access
+// and fail_on=error follow ADR 0008. loader receives the loader nickname
+// and compression the HEIF compression ("hevc" or "av1"), if any.
+static int px_header(const void *buf, size_t len, int *width, int *height, int *pages,
+		char *loader, size_t loader_len, char *compression, size_t compression_len) {
+	VipsImage *img = vips_image_new_from_buffer(buf, len, "",
+		"access", VIPS_ACCESS_SEQUENTIAL,
+		"fail_on", VIPS_FAIL_ON_ERROR,
+		NULL);
+	if (!img)
+		return -1;
+	*width = vips_image_get_width(img);
+	*height = vips_image_get_height(img);
+	*pages = vips_image_get_n_pages(img);
+	const char *s = NULL;
+	loader[0] = '\0';
+	if (vips_image_get_typeof(img, "vips-loader") && !vips_image_get_string(img, "vips-loader", &s) && s)
+		g_strlcpy(loader, s, loader_len);
+	s = NULL;
+	compression[0] = '\0';
+	if (vips_image_get_typeof(img, "heif-compression") && !vips_image_get_string(img, "heif-compression", &s) && s)
+		g_strlcpy(compression, s, compression_len);
+	g_object_unref(img);
+	return 0;
+}
+
 // px_save_blank encodes a size x size black RGB image with the saver that
 // matches suffix. The caller frees *buf with g_free.
 static int px_save_blank(const char *suffix, int size, void **buf, size_t *len) {
@@ -41,6 +67,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -123,9 +150,51 @@ func FindLoader(buf []byte) (string, error) {
 	name := C.vips_foreign_find_load_buffer(unsafe.Pointer(&buf[0]), C.size_t(len(buf)))
 	if name == nil {
 		C.vips_error_clear()
-		return "", errors.New("imaging: no allowed loader accepts the input")
+		return "", ErrUnsupported
 	}
 	return C.GoString(name), nil
+}
+
+// loaderFormats maps loader nickname prefixes to input format names.
+var loaderFormats = []struct{ prefix, format string }{
+	{"jpegload", "jpeg"},
+	{"pngload", "png"},
+	{"webpload", "webp"},
+	{"gifload", "gif"},
+	{"tiffload", "tiff"},
+	{"heifload", "heif"},
+	{"jxlload", "jxl"},
+}
+
+// Inspect reads only the header of buf: format, dimensions, and page
+// count. No pixel data is decoded, so it is the place for the size checks
+// against decompression bombs (ADR 0008).
+func Inspect(buf []byte) (Info, error) {
+	if _, err := FindLoader(buf); err != nil {
+		return Info{}, err
+	}
+	var width, height, pages C.int
+	var loader [64]C.char
+	var compression [16]C.char
+	if C.px_header(unsafe.Pointer(&buf[0]), C.size_t(len(buf)), &width, &height, &pages,
+		&loader[0], C.size_t(len(loader)), &compression[0], C.size_t(len(compression))) != 0 {
+		return Info{}, fmt.Errorf("%w: %s", ErrDecode, lastError())
+	}
+	info := Info{Width: int(width), Height: int(height), Pages: max(int(pages), 1)}
+	nickname := C.GoString(&loader[0])
+	for _, lf := range loaderFormats {
+		if strings.HasPrefix(nickname, lf.prefix) {
+			info.Format = lf.format
+			break
+		}
+	}
+	if info.Format == "" {
+		return Info{}, fmt.Errorf("%w: unexpected loader %q", ErrUnsupported, nickname)
+	}
+	if info.Format == "heif" && C.GoString(&compression[0]) == "av1" {
+		info.Format = "avif"
+	}
+	return info, nil
 }
 
 // Probe saves a blank image in every allowed output format and checks that

@@ -6,10 +6,14 @@ package selfcheck
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -19,6 +23,8 @@ import (
 	"time"
 
 	"github.com/benerages/pixsheaf/internal/imaging"
+	"github.com/benerages/pixsheaf/internal/jobexec"
+	"github.com/benerages/pixsheaf/internal/jobproto"
 	"github.com/benerages/pixsheaf/internal/transport"
 )
 
@@ -36,6 +42,9 @@ type Options struct {
 	// NoopArgs runs the current binary as a no-op; used to test that
 	// /tmp is mounted noexec.
 	NoopArgs []string
+	// Job, if set, runs job processes to check the per-job sandbox
+	// (ADR 0006) from the inside.
+	Job *jobexec.Runner
 }
 
 // Run executes all checks and returns their results in a stable order.
@@ -114,6 +123,10 @@ func Run(ctx context.Context, o Options) []Result {
 		}
 		add("codec "+p.Suffix, p.Err == nil, pinfo)
 	}
+
+	if o.Job != nil {
+		jobChecks(ctx, *o.Job, add)
+	}
 	return rs
 }
 
@@ -166,4 +179,45 @@ func tmpNoexec(ctx context.Context, noopArgs []string) (bool, string) {
 		return true, "exec denied"
 	}
 	return false, fmt.Sprint("exec not denied: err=", err)
+}
+
+// jobChecks runs job processes and checks the sandbox from the inside:
+// seccomp, Landlock, resource limits, and a real image header read.
+func jobChecks(ctx context.Context, r jobexec.Runner, add func(string, bool, string)) {
+	resp, _, err := r.Run(ctx, jobproto.Request{Op: jobproto.OpSandboxCheck}, nil)
+	if err == nil && resp.Error != nil {
+		err = fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+	if err != nil || resp.Sandbox == nil {
+		add("job sandbox report", false, fmt.Sprint(err))
+		return
+	}
+	s := resp.Sandbox
+	add("job: socket denied (seccomp)", s.SocketDenied, "")
+	add("job: exec denied (seccomp)", s.ExecDenied, "")
+	add("job: landlock available", s.LandlockABI > 0, fmt.Sprint("abi=", s.LandlockABI))
+	add("job: file creation denied", s.FileCreateDenied, "")
+	add("job: reads outside allowlist denied", s.OutsideReadDenied, "")
+	add("job: no core dumps, no file writes", s.CoreLimit == 0 && s.FileSizeLimit == 0,
+		fmt.Sprintf("core=%d fsize=%d", s.CoreLimit, s.FileSizeLimit))
+	add("job: memory and CPU limits", s.MemoryLimit != math.MaxUint64 && s.CPULimit != math.MaxUint64,
+		fmt.Sprintf("data=%d cpu=%d", s.MemoryLimit, s.CPULimit))
+
+	resp, _, err = r.Run(ctx, jobproto.Request{Op: jobproto.OpInspect}, samplePNG())
+	ok := err == nil && resp.Error == nil && resp.Image != nil &&
+		resp.Image.Format == "png" && resp.Image.Width == 3 && resp.Image.Height == 2
+	info := fmt.Sprint(err)
+	if resp.Error != nil {
+		info = resp.Error.Code + ": " + resp.Error.Message
+	} else if resp.Image != nil {
+		info = fmt.Sprintf("%s %dx%d", resp.Image.Format, resp.Image.Width, resp.Image.Height)
+	}
+	add("job: inspect image in sandbox", ok, info)
+}
+
+// samplePNG returns a 3x2 PNG encoded by the Go standard library.
+func samplePNG() []byte {
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, image.NewGray(image.Rect(0, 0, 3, 2)))
+	return buf.Bytes()
 }

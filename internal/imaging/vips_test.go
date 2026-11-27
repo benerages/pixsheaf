@@ -3,6 +3,7 @@
 package imaging
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -52,5 +53,37 @@ func TestLoadersOutsideAllowlistFail(t *testing.T) {
 func TestFindLoaderEmptyInput(t *testing.T) {
 	if _, err := FindLoader(nil); err == nil {
 		t.Fatal("FindLoader(nil) succeeded, want an error")
+	}
+}
+
+func TestInspectReadsHeader(t *testing.T) {
+	for _, tc := range []struct{ suffix, format string }{
+		{".jpg", "jpeg"}, {".png", "png"}, {".webp", "webp"}, {".gif", "gif"},
+		{".tif", "tiff"}, {".avif", "avif"}, {".jxl", "jxl"},
+	} {
+		buf, err := saveBlank(tc.suffix, 64)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.suffix, err)
+		}
+		info, err := Inspect(buf)
+		if err != nil {
+			t.Errorf("%s: Inspect: %v", tc.suffix, err)
+			continue
+		}
+		if info.Format != tc.format || info.Width != 64 || info.Height != 64 || info.Pages != 1 {
+			t.Errorf("%s: Inspect = %+v, want %s 64x64, 1 page", tc.suffix, info, tc.format)
+		}
+	}
+}
+
+func TestInspectErrors(t *testing.T) {
+	if _, err := Inspect([]byte("%PDF-1.4\n")); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("PDF: err = %v, want ErrUnsupported", err)
+	}
+	// A PNG signature followed by garbage: the loader matches, the header
+	// is broken.
+	broken := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	if _, err := Inspect(broken); !errors.Is(err, ErrDecode) {
+		t.Errorf("broken PNG: err = %v, want ErrDecode", err)
 	}
 }

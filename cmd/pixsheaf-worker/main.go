@@ -5,7 +5,8 @@
 //
 //	pixsheaf-worker [run]     connect to the API and wait for jobs (default)
 //	pixsheaf-worker healthcheck
-//	pixsheaf-worker selfcheck verify container isolation and codecs (container tests)
+//	pixsheaf-worker selfcheck verify container isolation, codecs, and the job sandbox (container tests)
+//	pixsheaf-worker job       run one job in a sandbox (started by the worker itself)
 //	pixsheaf-worker version   print the worker and libvips versions
 package main
 
@@ -20,12 +21,16 @@ import (
 
 	"github.com/benerages/pixsheaf/internal/config"
 	"github.com/benerages/pixsheaf/internal/imaging"
+	"github.com/benerages/pixsheaf/internal/jobexec"
 	"github.com/benerages/pixsheaf/internal/selfcheck"
 	"github.com/benerages/pixsheaf/internal/transport"
 	"github.com/benerages/pixsheaf/internal/version"
 )
 
 const pingInterval = 10 * time.Second
+
+// maxJobOutputBytes bounds the output of one job process.
+const maxJobOutputBytes = 256 << 20
 
 func main() {
 	cmd := "run"
@@ -39,6 +44,8 @@ func main() {
 		os.Exit(healthcheck())
 	case "selfcheck":
 		os.Exit(runSelfcheck())
+	case "job":
+		os.Exit(jobexec.Child(os.Args[2:], os.Stdin, os.Stdout))
 	case "noop":
 		// Used by selfcheck to test that /tmp is mounted noexec.
 	case "version":
@@ -107,7 +114,8 @@ func runSelfcheck() int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	rs := selfcheck.Run(ctx, selfcheck.Options{SocketPath: cfg.SocketPath, NoopArgs: []string{"noop"}})
+	job := jobexec.NewRunner(cfg.JobTimeout, uint64(cfg.JobMemoryMB)<<20, maxJobOutputBytes) //nolint:gosec // G115: JobMemoryMB is validated to 64-65536
+	rs := selfcheck.Run(ctx, selfcheck.Options{SocketPath: cfg.SocketPath, NoopArgs: []string{"noop"}, Job: &job})
 	if selfcheck.Print(os.Stdout, rs) > 0 {
 		return 1
 	}

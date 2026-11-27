@@ -17,7 +17,7 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.SocketPath != "/run/pixsheaf/api.sock" || c.MaxUploadMB != 25 || c.MaxFiles != 50 ||
 		c.JobTimeout != 60*time.Second || c.MaxConcurrency != 2 || len(c.TrustedProxies) != 0 ||
-		c.LogLevel != slog.LevelInfo {
+		c.LogLevel != slog.LevelInfo || c.JobMemoryMB != 384 {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
 }

@@ -12,6 +12,7 @@ Unknown `PIXSHEAF_*` variables are rejected at startup, so a typo cannot silentl
 | `PIXSHEAF_MAX_FILES` | `50` | 1–10000 | Maximum number of files per job. |
 | `PIXSHEAF_JOB_TIMEOUT` | `60s` | Go duration, 1s–30m | Maximum processing time per file. |
 | `PIXSHEAF_MAX_CONCURRENCY` | `2` | 1–256 | Files processed in parallel across all clients. |
+| `PIXSHEAF_JOB_MEMORY_MB` | `384` | 64–65536 | Memory limit of one job process (RLIMIT_DATA, ADR 0006). Keep it below the worker container's `mem_limit`. |
 | `PIXSHEAF_TRUSTED_PROXIES` | empty | comma-separated CIDR prefixes | Reverse proxies whose `X-Forwarded-For` header is trusted. Empty: the header is ignored. |
 | `PIXSHEAF_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` | Minimum log level. Logs never contain file contents, original file names, or plaintext IP addresses. |
 
