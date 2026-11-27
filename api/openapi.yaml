@@ -1,0 +1,1182 @@
+openapi: 3.1.0
+info:
+  title: Pixsheaf API
+  version: 1.0.0-dev
+  summary: Convert, resize, and optimize images. One image or many.
+  description: |
+    The Pixsheaf API processes images with a declarative pipeline. The web UI
+    uses this API exclusively.
+
+    ## Glossary
+
+    - **Job:** one request to process a set of one or more files with one
+      pipeline. A job with one file returns the processed image directly; a
+      job with several files returns a ZIP archive.
+    - **File (task):** one uploaded image inside a job. Each file is processed
+      on its own, in an isolated worker process.
+    - **Pipeline:** the ordered list of steps applied to every file
+      (ADR 0009).
+
+    ## Flow
+
+    1. `POST /jobs` with a pipeline and the number of files to expect. The
+       response contains the job and a secret job token.
+    2. `POST /jobs/{jobId}/files` once per file (uploads may run in
+       parallel). Processing of each file starts as soon as it is uploaded.
+       The job accepts no further uploads once `expectedFiles` have arrived.
+    3. Follow progress with `GET /jobs/{jobId}/events` (Server-Sent Events)
+       or poll `GET /jobs/{jobId}`.
+    4. `GET /jobs/{jobId}/download` once the job is `done`. The result can be
+       downloaded once; afterwards the job and all its data are deleted.
+       Jobs that are not downloaded expire at `expiresAt`.
+
+    ## Authentication and CSRF (ADR 0019)
+
+    No account is needed (ADR 0015). Creating a job returns a secret **job
+    token**. Every request for that job must present it, either:
+
+    - as `Authorization: Bearer <token>` (required for all requests that
+      change state), or
+    - as the `pixsheaf_job` cookie, which the server sets on job creation
+      (`HttpOnly; SameSite=Strict; Path=/api/v1/jobs/{jobId}`). The cookie is
+      accepted only for `GET /jobs/{jobId}/events` and
+      `GET /jobs/{jobId}/download`, so that browsers can use `EventSource`
+      and plain download links.
+
+    The job ID alone grants nothing. State-changing requests are also
+    rejected when `Sec-Fetch-Site` is `cross-site` or `same-site`, or when
+    `Origin` does not match the server's origin. CORS is not enabled.
+
+    ## Errors
+
+    Errors use `application/problem+json` (RFC 9457) with a stable `code`.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: /api/v1
+tags:
+  - name: meta
+    description: Server capabilities.
+  - name: jobs
+    description: Create, follow, download, and cancel jobs.
+  - name: files
+    description: Upload and manage the files of a job.
+
+paths:
+  /capabilities:
+    get:
+      tags: [meta]
+      operationId: getCapabilities
+      summary: Formats and limits of this server
+      description: >-
+        Returns the input and output formats and the limits configured by the
+        operator. Clients use it to validate input before uploading.
+      security: []
+      responses:
+        "200":
+          description: Capabilities.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Capabilities"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /jobs:
+    post:
+      tags: [jobs]
+      operationId: createJob
+      summary: Create a job
+      description: >-
+        Creates a job with a validated pipeline. The response body contains
+        the job token; the server also sets it as the `pixsheaf_job` cookie
+        for this job's path.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobCreate"
+      responses:
+        "201":
+          description: Job created.
+          headers:
+            Location:
+              description: URL of the new job.
+              schema:
+                type: string
+            Set-Cookie:
+              description: >-
+                `pixsheaf_job=<token>; Path=/api/v1/jobs/<jobId>; HttpOnly;
+                SameSite=Strict; Max-Age=<seconds until expiry>`, plus
+                `Secure` when the request arrived over TLS.
+              schema:
+                type: string
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Get a job and the status of its files
+      security:
+        - jobToken: []
+      responses:
+        "200":
+          description: The job.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [jobs]
+      operationId: deleteJob
+      summary: Cancel a job and delete all its data
+      security:
+        - jobToken: []
+      responses:
+        "204":
+          description: Job canceled and deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /jobs/{jobId}/files:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [files]
+      operationId: uploadFile
+      summary: Upload one file
+      description: >-
+        Uploads one image as a multipart form with a single part named
+        `file`. The type is detected from the content (magic bytes); the
+        part's `Content-Type` and file name are not used for that decision
+        (ADR 0014). The original file name is kept in memory only, to build
+        the output name; it is never logged. Processing starts immediately.
+      security:
+        - jobToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/FileUpload"
+            encoding:
+              file:
+                contentType: application/octet-stream, image/*
+      responses:
+        "201":
+          description: File accepted and queued.
+          headers:
+            Location:
+              description: URL of the new file.
+              schema:
+                type: string
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /jobs/{jobId}/files/{fileId}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+      - $ref: "#/components/parameters/FileId"
+    get:
+      tags: [files]
+      operationId: getFile
+      summary: Get the status of one file
+      security:
+        - jobToken: []
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobFile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [files]
+      operationId: cancelFile
+      summary: Cancel one file
+      description: >-
+        Cancels processing of one file and deletes its data. The file stays
+        in the job with status `canceled`; the rest of the job continues.
+      security:
+        - jobToken: []
+      responses:
+        "204":
+          description: File canceled.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /jobs/{jobId}/events:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: streamJobEvents
+      summary: Follow job progress (Server-Sent Events)
+      description: |
+        Streams progress as Server-Sent Events. Each event's `data` is one
+        JSON object:
+
+        - `event: job` with a `Job` whenever the job status changes,
+        - `event: file` with a `JobFile` whenever a file's status changes.
+
+        The first events describe the current state, so a client that
+        reconnects needs no other request. The stream ends after the job
+        reaches `done` or `canceled`. Comment lines (`: ping`) keep the
+        connection open. The `pixsheaf_job` cookie is accepted here.
+      security:
+        - jobToken: []
+        - jobCookie: []
+      responses:
+        "200":
+          description: Event stream.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Event stream; see the operation description.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /jobs/{jobId}/download:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: downloadJob
+      summary: Download the result once
+      description: >-
+        Returns the processed image when the job has one file, otherwise a
+        ZIP archive (streamed) with every successfully processed file and a
+        `report.json`. Available once the job is `done`. After a complete
+        download the job and its data are deleted; a second request returns
+        404. Original bytes are never returned; every output is a new encode
+        (ADR 0014). The `pixsheaf_job` cookie is accepted here.
+      security:
+        - jobToken: []
+        - jobCookie: []
+      responses:
+        "200":
+          description: The result.
+          headers:
+            Content-Disposition:
+              description: '`attachment` with the output file name (RFC 6266).'
+              schema:
+                type: string
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            image/jpeg:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/png:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/webp:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/avif:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/gif:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/tiff:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/bmp:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            image/jxl:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            application/pdf:
+              schema:
+                $ref: "#/components/schemas/Binary"
+            application/zip:
+              schema:
+                $ref: "#/components/schemas/Binary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+components:
+  securitySchemes:
+    jobToken:
+      type: http
+      scheme: bearer
+      description: The job token returned by `createJob`.
+    jobCookie:
+      type: apiKey
+      in: cookie
+      name: pixsheaf_job
+      description: >-
+        Set by `createJob`, scoped to the job's path. Accepted only for the
+        event stream and the download.
+
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Id"
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Id"
+
+  headers:
+    CacheControlNoStore:
+      description: Responses are never cached.
+      schema:
+        type: string
+        enum: [no-store]
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: The job token is missing or wrong.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Rejected by the same-origin check (CSRF protection).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: >-
+        The job or file does not exist, has expired, or was already
+        downloaded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: >-
+        The job is not in a state that allows this request (for example, all
+        expected files were already uploaded, or the job is not done yet).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLarge:
+      description: A size limit was exceeded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnsupportedMediaType:
+      description: >-
+        The request body or the uploaded file has a type that is not allowed
+        (ADR 0014).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableContent:
+      description: The pipeline is syntactically valid JSON but not a valid pipeline.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: A rate limit was hit.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: The processing queue is full.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Id:
+      description: Random identifier with 128 bits of entropy (base64url, no padding).
+      type: string
+      pattern: "^[A-Za-z0-9_-]{22}$"
+
+    Token:
+      description: Secret job token with 256 bits of entropy (base64url, no padding).
+      type: string
+      pattern: "^[A-Za-z0-9_-]{43}$"
+
+    Binary:
+      type: string
+      contentMediaType: application/octet-stream
+
+    InputFormat:
+      description: Formats accepted for upload, detected by magic bytes (ADR 0014).
+      type: string
+      enum: [jpeg, png, webp, gif, tiff, bmp, avif, heif, jxl]
+
+    OutputFormat:
+      description: Formats that can be produced. `pdf` embeds the image in a one-page PDF.
+      type: string
+      enum: [jpeg, png, webp, gif, tiff, bmp, avif, jxl, pdf]
+
+    Capabilities:
+      type: object
+      additionalProperties: false
+      required: [inputFormats, outputFormats, limits, pipelineVersion]
+      properties:
+        pipelineVersion:
+          description: Highest pipeline version this server accepts.
+          type: integer
+          minimum: 1
+        inputFormats:
+          type: array
+          items:
+            $ref: "#/components/schemas/InputFormat"
+        outputFormats:
+          type: array
+          items:
+            $ref: "#/components/schemas/OutputFormat"
+        limits:
+          $ref: "#/components/schemas/Limits"
+
+    Limits:
+      description: Limits configured by the operator; always at or below the schema maximums.
+      type: object
+      additionalProperties: false
+      required:
+        [maxUploadBytes, maxFilesPerJob, maxJobBytes, maxInputPixels, maxOutputPixels, maxSteps, maxWatermarkBytes]
+      properties:
+        maxUploadBytes:
+          type: integer
+          minimum: 1
+        maxFilesPerJob:
+          type: integer
+          minimum: 1
+        maxJobBytes:
+          type: integer
+          minimum: 1
+        maxInputPixels:
+          type: integer
+          minimum: 1
+        maxOutputPixels:
+          type: integer
+          minimum: 1
+        maxSteps:
+          type: integer
+          minimum: 0
+        maxWatermarkBytes:
+          type: integer
+          minimum: 0
+
+    JobCreate:
+      type: object
+      additionalProperties: false
+      required: [pipeline, expectedFiles]
+      properties:
+        pipeline:
+          $ref: "#/components/schemas/Pipeline"
+        expectedFiles:
+          description: >-
+            Number of files that will be uploaded. The job stops accepting
+            uploads after this many files. With 1, the download is the image
+            itself; with more, it is a ZIP archive.
+          type: integer
+          minimum: 1
+          maximum: 10000
+
+    JobCreated:
+      type: object
+      additionalProperties: false
+      required: [job, token]
+      properties:
+        job:
+          $ref: "#/components/schemas/Job"
+        token:
+          $ref: "#/components/schemas/Token"
+
+    JobStatus:
+      description: |
+        - `open`: waiting for uploads; uploaded files are already processed.
+        - `processing`: all files uploaded, some still in progress.
+        - `done`: every file is `done`, `failed`, or `canceled`; the result
+          can be downloaded.
+        - `canceled`: the job was canceled; nothing can be downloaded.
+      type: string
+      enum: [open, processing, done, canceled]
+
+    Job:
+      type: object
+      additionalProperties: false
+      required: [id, status, expectedFiles, createdAt, expiresAt, files]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        expectedFiles:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          description: The job and all its data are deleted at this time if not downloaded.
+          type: string
+          format: date-time
+        files:
+          description: Uploaded files in upload order.
+          type: array
+          items:
+            $ref: "#/components/schemas/JobFile"
+
+    FileStatus:
+      type: string
+      enum: [queued, processing, done, failed, canceled]
+
+    JobFile:
+      type: object
+      additionalProperties: false
+      required: [id, index, status]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        index:
+          description: Zero-based upload position within the job.
+          type: integer
+          minimum: 0
+        status:
+          $ref: "#/components/schemas/FileStatus"
+        input:
+          $ref: "#/components/schemas/ImageInfo"
+        output:
+          $ref: "#/components/schemas/OutputInfo"
+        error:
+          $ref: "#/components/schemas/FileError"
+
+    ImageInfo:
+      description: Facts about an uploaded image. Width and height are known once the header was read.
+      type: object
+      additionalProperties: false
+      required: [format, bytes]
+      properties:
+        format:
+          $ref: "#/components/schemas/InputFormat"
+        bytes:
+          type: integer
+          minimum: 0
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+        pages:
+          description: Number of frames or pages, for animated or multi-page images.
+          type: integer
+          minimum: 1
+
+    OutputInfo:
+      description: Facts about the processed image.
+      type: object
+      additionalProperties: false
+      required: [format, bytes, width, height, name]
+      properties:
+        format:
+          $ref: "#/components/schemas/OutputFormat"
+        bytes:
+          type: integer
+          minimum: 0
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+        pages:
+          type: integer
+          minimum: 1
+        name:
+          description: >-
+            Sanitized output file name, used in `Content-Disposition` and as
+            the path inside a ZIP archive.
+          type: string
+          minLength: 1
+          maxLength: 255
+    FileError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          description: Stable machine-readable reason.
+          type: string
+          enum:
+            - unsupported_format
+            - format_disabled
+            - too_large
+            - too_many_pixels
+            - too_many_frames
+            - decode_failed
+            - encode_failed
+            - target_size_unreachable
+            - timeout
+            - internal
+        message:
+          description: Human-readable explanation (English). Never contains file contents or paths.
+          type: string
+          maxLength: 500
+
+    FileUpload:
+      type: object
+      additionalProperties: false
+      required: [file]
+      properties:
+        file:
+          description: The image.
+          type: string
+          contentMediaType: application/octet-stream
+
+    Problem:
+      description: Error details (RFC 9457).
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          description: URI identifying the problem type; `about:blank` when no more specific type exists.
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        code:
+          description: Stable machine-readable error code, such as `pipeline_invalid` or `rate_limited`.
+          type: string
+          pattern: "^[a-z][a-z0-9_]{1,63}$"
+        errors:
+          description: Validation errors, one per invalid value.
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationError"
+
+    ValidationError:
+      type: object
+      additionalProperties: false
+      required: [pointer, message]
+      properties:
+        pointer:
+          description: JSON Pointer (RFC 6901) to the invalid value in the request body.
+          type: string
+        message:
+          type: string
+
+    # --- Pipeline (ADR 0009) ------------------------------------------------
+
+    Pipeline:
+      description: |
+        Declarative processing pipeline (ADR 0009). The same document is used
+        by presets, the UI, and the API, and the server validates it on every
+        request.
+
+        Steps run in order; a step with `when` runs only if all of its
+        conditions hold for the current image. The output format is the
+        source format unless a `convert` step applies; HEIC/HEIF input
+        without a `convert` step is saved as JPEG.
+
+        The maximums in this schema are hard limits. The operator's limits
+        (`GET /capabilities`) may be lower and are enforced as well.
+      type: object
+      additionalProperties: false
+      required: [version, steps]
+      properties:
+        version:
+          description: Pipeline format version.
+          type: integer
+          enum: [1]
+        steps:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/Step"
+        metadata:
+          $ref: "#/components/schemas/MetadataPolicy"
+        colorSpace:
+          description: >-
+            `srgb` (default) converts to sRGB using the embedded ICC profile;
+            `keep` leaves the color space unchanged.
+          type: string
+          enum: [srgb, keep]
+          default: srgb
+
+    MetadataPolicy:
+      description: >-
+        Metadata (EXIF, GPS, XMP, IPTC) is removed by default. `keep: true`
+        copies it to the output where the format supports it; GPS data is
+        removed unless `keepLocation` is also true.
+      type: object
+      additionalProperties: false
+      properties:
+        keep:
+          type: boolean
+          default: false
+        keepLocation:
+          type: boolean
+          default: false
+
+    Step:
+      description: One pipeline step, selected by `op`.
+      oneOf:
+        - $ref: "#/components/schemas/AutoOrientStep"
+        - $ref: "#/components/schemas/ResizeStep"
+        - $ref: "#/components/schemas/CropStep"
+        - $ref: "#/components/schemas/RotateStep"
+        - $ref: "#/components/schemas/FlipStep"
+        - $ref: "#/components/schemas/WatermarkStep"
+        - $ref: "#/components/schemas/ConvertStep"
+      discriminator:
+        propertyName: op
+        mapping:
+          autoOrient: "#/components/schemas/AutoOrientStep"
+          resize: "#/components/schemas/ResizeStep"
+          crop: "#/components/schemas/CropStep"
+          rotate: "#/components/schemas/RotateStep"
+          flip: "#/components/schemas/FlipStep"
+          watermark: "#/components/schemas/WatermarkStep"
+          convert: "#/components/schemas/ConvertStep"
+
+    Condition:
+      description: >-
+        All given conditions must hold. Dimensions refer to the image as it
+        is when the step runs. Fixed vocabulary, no expressions (ADR 0009).
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        widthGt:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        widthLt:
+          type: integer
+          minimum: 1
+          maximum: 65536
+        heightGt:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        heightLt:
+          type: integer
+          minimum: 1
+          maximum: 65536
+        longestEdgeGt:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        sourceFormat:
+          description: The format of the uploaded file.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/InputFormat"
+        orientation:
+          type: string
+          enum: [landscape, portrait, square]
+
+    AutoOrientStep:
+      description: Rotates and flips the image according to its EXIF orientation tag.
+      type: object
+      additionalProperties: false
+      required: [op]
+      properties:
+        op:
+          type: string
+          enum: [autoOrient]
+        when:
+          $ref: "#/components/schemas/Condition"
+
+    ResizeStep:
+      type: object
+      additionalProperties: false
+      required: [op, params]
+      properties:
+        op:
+          type: string
+          enum: [resize]
+        when:
+          $ref: "#/components/schemas/Condition"
+        params:
+          $ref: "#/components/schemas/ResizeParams"
+
+    ResizeParams:
+      description: |
+        Exactly one way of giving the size (enforced by the server):
+        - `width` and/or `height` in pixels,
+        - `longestEdge` in pixels,
+        - `percent` of the current size.
+
+        `mode` applies when both width and height are given:
+        - `fit`: fit inside the box, keeping the aspect ratio,
+        - `fill`: stretch to exactly the box,
+        - `crop`: cover the box and crop the overflow (using `gravity`).
+      type: object
+      additionalProperties: false
+      properties:
+        width:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        height:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        longestEdge:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        percent:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1000
+        mode:
+          type: string
+          enum: [fit, fill, crop]
+          default: fit
+        gravity:
+          $ref: "#/components/schemas/Gravity"
+        enlarge:
+          description: Allow the result to be larger than the current image.
+          type: boolean
+          default: false
+
+    Gravity:
+      description: Anchor for cropping and placement. `attention` and `entropy` pick the most interesting region.
+      type: string
+      enum: [center, north, northeast, east, southeast, south, southwest, west, northwest, attention, entropy]
+      default: center
+
+    CropStep:
+      type: object
+      additionalProperties: false
+      required: [op, params]
+      properties:
+        op:
+          type: string
+          enum: [crop]
+        when:
+          $ref: "#/components/schemas/Condition"
+        params:
+          $ref: "#/components/schemas/CropParams"
+
+    CropParams:
+      description: >-
+        Either an aspect ratio (the largest region with that ratio, placed by
+        `gravity`) or a rectangle in pixels, not both (enforced by the
+        server). A rectangle that extends past the image is clipped.
+      type: object
+      additionalProperties: false
+      properties:
+        aspectRatio:
+          $ref: "#/components/schemas/AspectRatio"
+        gravity:
+          $ref: "#/components/schemas/Gravity"
+        rect:
+          $ref: "#/components/schemas/Rect"
+
+    AspectRatio:
+      type: object
+      additionalProperties: false
+      required: [width, height]
+      properties:
+        width:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        height:
+          type: integer
+          minimum: 1
+          maximum: 1000
+
+    Rect:
+      type: object
+      additionalProperties: false
+      required: [left, top, width, height]
+      properties:
+        left:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        top:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        width:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        height:
+          type: integer
+          minimum: 1
+          maximum: 65535
+
+    RotateStep:
+      type: object
+      additionalProperties: false
+      required: [op, params]
+      properties:
+        op:
+          type: string
+          enum: [rotate]
+        when:
+          $ref: "#/components/schemas/Condition"
+        params:
+          type: object
+          additionalProperties: false
+          required: [angle]
+          properties:
+            angle:
+              description: Clockwise rotation in degrees.
+              type: integer
+              enum: [90, 180, 270]
+
+    FlipStep:
+      type: object
+      additionalProperties: false
+      required: [op, params]
+      properties:
+        op:
+          type: string
+          enum: [flip]
+        when:
+          $ref: "#/components/schemas/Condition"
+        params:
+          type: object
+          additionalProperties: false
+          required: [direction]
+          properties:
+            direction:
+              type: string
+              enum: [horizontal, vertical]
+
+    WatermarkStep:
+      type: object
+      additionalProperties: false
+      required: [op, params]
+      properties:
+        op:
+          type: string
+          enum: [watermark]
+        when:
+          $ref: "#/components/schemas/Condition"
+        params:
+          $ref: "#/components/schemas/WatermarkParams"
+
+    WatermarkParams:
+      description: >-
+        A text or an image placed on the picture. Text is plain text (no
+        markup) rendered with the bundled font. An image watermark is a PNG
+        or WebP, embedded as base64 and subject to `maxWatermarkBytes`; it is
+        decoded in the worker sandbox like any upload. Exactly one of `text`
+        and `image` is required, and `color` applies only to text (enforced
+        by the server).
+      type: object
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200
+        color:
+          description: Text color as `#RRGGBB`.
+          type: string
+          pattern: "^#[0-9A-Fa-f]{6}$"
+          default: "#FFFFFF"
+        image:
+          description: Base64-encoded PNG or WebP (standard alphabet, with padding).
+          type: string
+          contentEncoding: base64
+          maxLength: 1398104
+        size:
+          description: Watermark width as a percentage of the image width.
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100
+          default: 20
+        position:
+          $ref: "#/components/schemas/Gravity"
+        margin:
+          description: Distance from the edge as a percentage of the shorter image side.
+          type: number
+          minimum: 0
+          maximum: 25
+          default: 2
+        opacity:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.5
+
+    ConvertStep:
+      description: Sets the output format and encoder options. If several apply, the last one wins.
+      type: object
+      additionalProperties: false
+      required: [op, params]
+      properties:
+        op:
+          type: string
+          enum: [convert]
+        when:
+          $ref: "#/components/schemas/Condition"
+        params:
+          $ref: "#/components/schemas/ConvertParams"
+
+    ConvertParams:
+      type: object
+      additionalProperties: false
+      required: [format]
+      properties:
+        format:
+          $ref: "#/components/schemas/OutputFormat"
+        quality:
+          description: Quality for lossy formats (jpeg, webp, avif, jxl, and pdf with a JPEG image).
+          type: integer
+          minimum: 1
+          maximum: 100
+        lossless:
+          description: Lossless mode for webp, avif, and jxl.
+          type: boolean
+          default: false
+        optimize:
+          description: >-
+            Spend more CPU time for a smaller file without changing pixels
+            (PNG compression level and palette search, JPEG optimized Huffman
+            tables, effort for webp, avif, and jxl).
+          type: boolean
+          default: true
+        targetSizeKb:
+          description: >-
+            Largest acceptable output size. The quality is searched downward
+            until the output fits; if it cannot fit, the file fails with
+            `target_size_unreachable`. Not allowed together with `quality` or
+            `lossless`.
+          type: integer
+          minimum: 1
+          maximum: 1048576
+        progressive:
+          description: Progressive JPEG or interlaced PNG/GIF.
+          type: boolean
+          default: false

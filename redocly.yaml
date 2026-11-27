@@ -1,0 +1,3 @@
+# Redocly CLI configuration for linting api/openapi.yaml (ADR 0011).
+extends:
+  - recommended

@@ -12,13 +12,17 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "gen:api": "openapi-typescript ../api/openapi.yaml --output src/lib/api/schema.d.ts",
+    "lint:api": "redocly lint ../api/openapi.yaml --config ../redocly.yaml"
   },
   "devDependencies": {
+    "@redocly/cli": "2.82.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "4.3.5",
     "eslint": "10.14.0",
     "eslint-plugin-svelte": "3.24.1",
+    "openapi-typescript": "7.13.0",
     "prettier": "3.10.1",
     "svelte": "5.59.0",
     "svelte-check": "4.7.8",

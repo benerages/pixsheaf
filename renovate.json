@@ -49,10 +49,11 @@
       "datasourceTemplate": "npm"
     },
     {
-      "description": "Go tools run with go run in CI",
+      "description": "Go tools run with go run in CI and scripts",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^\\.github/workflows/.+\\.ya?ml$/"
+        "/^\\.github/workflows/.+\\.ya?ml$/",
+        "/^scripts/.+\\.sh$/"
       ],
       "matchStrings": [
         "go run (?<depName>[a-z0-9./-]+?)(/cmd/[a-z0-9-]+)?@(?<currentValue>v[0-9.]+)"

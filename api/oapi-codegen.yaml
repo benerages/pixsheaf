@@ -1,0 +1,8 @@
+# oapi-codegen configuration (ADR 0011). Regenerate with
+# scripts/generate-api.sh; CI fails if the generated code is out of date.
+# Only models are generated for now; the server handlers for uploads, SSE,
+# and downloads are written by hand against these types.
+package: api
+output: internal/api/api.gen.go
+generate:
+  models: true

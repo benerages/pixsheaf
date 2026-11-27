@@ -1,2 +1,4 @@
 pnpm-lock.yaml
 public/
+# Generated from api/openapi.yaml
+src/lib/api/schema.d.ts
