@@ -1,6 +1,6 @@
 # ADR 0004: libvips build and worker base image
 
-- Status: Accepted
+- Status: Superseded by [ADR 0018](0018-wolfi-worker-base.md) on 2026-11-27
 - Date: 2026-11-27
 - Approved by: project owner, 2026-11-27
 

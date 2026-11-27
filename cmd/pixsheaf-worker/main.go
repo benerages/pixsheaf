@@ -1,13 +1,12 @@
 // Command pixsheaf-worker processes images in an isolated container.
-// In Phase 2 it only connects to the API socket; image processing is
-// added in Phase 3.
+// It connects to the API socket; job processing follows in Phase 3.
 //
 // Usage:
 //
 //	pixsheaf-worker [run]     connect to the API and wait for jobs (default)
 //	pixsheaf-worker healthcheck
-//	pixsheaf-worker selfcheck verify container isolation (container tests)
-//	pixsheaf-worker version
+//	pixsheaf-worker selfcheck verify container isolation and codecs (container tests)
+//	pixsheaf-worker version   print the worker and libvips versions
 package main
 
 import (
@@ -20,6 +19,7 @@ import (
 	"time"
 
 	"github.com/benerages/pixsheaf/internal/config"
+	"github.com/benerages/pixsheaf/internal/imaging"
 	"github.com/benerages/pixsheaf/internal/selfcheck"
 	"github.com/benerages/pixsheaf/internal/transport"
 	"github.com/benerages/pixsheaf/internal/version"
@@ -42,7 +42,7 @@ func main() {
 	case "noop":
 		// Used by selfcheck to test that /tmp is mounted noexec.
 	case "version":
-		fmt.Println(version.Version)
+		fmt.Printf("%s (libvips %s)\n", version.Version, imaging.LibraryVersion())
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q (want run, healthcheck, selfcheck, version)\n", cmd)
 		os.Exit(2)

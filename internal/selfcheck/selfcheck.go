@@ -1,5 +1,6 @@
 // Package selfcheck verifies, from inside a running worker container, that
-// the isolation required by ADRs 0006 and 0007 is in effect. It is used by
+// the isolation required by ADRs 0006 and 0007 is in effect and that every
+// allowed codec works (ADRs 0008, 0018). It is used by
 // `pixsheaf-worker selfcheck` in the container tests.
 package selfcheck
 
@@ -17,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/benerages/pixsheaf/internal/imaging"
 	"github.com/benerages/pixsheaf/internal/transport"
 )
 
@@ -103,6 +105,15 @@ func Run(ctx context.Context, o Options) []Result {
 
 	ok, info := tmpNoexec(ctx, o.NoopArgs)
 	add("tmp writable and noexec", ok, info)
+
+	// Every allowed output format round-trips through its loader.
+	for _, p := range imaging.Probe() {
+		pinfo := p.Loader
+		if p.Err != nil {
+			pinfo = p.Err.Error()
+		}
+		add("codec "+p.Suffix, p.Err == nil, pinfo)
+	}
 	return rs
 }
 

@@ -7,7 +7,7 @@ Each ADR records one decision with its context and consequences. Status values: 
 | [0001](0001-project-name.md) | Project name "Pixsheaf" | Accepted |
 | [0002](0002-server-language.md) | Server language | Accepted |
 | [0003](0003-libvips-go-binding.md) | libvips Go binding | Accepted |
-| [0004](0004-libvips-build-and-worker-base-image.md) | libvips build and worker base image | Accepted |
+| [0004](0004-libvips-build-and-worker-base-image.md) | libvips build and worker base image | Superseded by 0018 |
 | [0005](0005-api-base-image.md) | API base image | Accepted |
 | [0006](0006-worker-isolation.md) | Worker isolation | Accepted |
 | [0007](0007-job-transport.md) | Job transport | Accepted |
@@ -21,3 +21,4 @@ Each ADR records one decision with its context and consequences. Status values: 
 | [0015](0015-anonymous-uploads.md) | Anonymous uploads with compensating controls | Accepted |
 | [0016](0016-heic-in-default-worker.md) | HEIC/HEIF decoding in the default worker image | Accepted |
 | [0017](0017-palette-quantization-library.md) | Palette quantization with quantizr instead of libimagequant | Accepted |
+| [0018](0018-wolfi-worker-base.md) | Wolfi as the worker base; minimal runtime root filesystem | Accepted |

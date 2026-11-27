@@ -1,23 +1,35 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:best-practices", ":semanticCommits", "default:automergeDigest"],
+  "extends": [
+    "config:best-practices",
+    ":semanticCommits",
+    "default:automergeDigest"
+  ],
   "minimumReleaseAge": "7 days",
   "internalChecksFilter": "strict",
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": ["security"],
+    "labels": [
+      "security"
+    ],
     "minimumReleaseAge": null
   },
   "packageRules": [
     {
       "description": "Group GitHub Actions updates",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "GitHub Actions"
     },
     {
       "description": "Hold TypeScript at 6.0.x until typescript-eslint and svelte-check support 7 (ADR 0010)",
-      "matchPackageNames": ["typescript"],
+      "matchPackageNames": [
+        "typescript"
+      ],
       "allowedVersions": "<6.1.0"
     }
   ],
@@ -25,17 +37,37 @@
     {
       "description": "pnpm version pinned in Dockerfiles, workflows, and scripts",
       "customType": "regex",
-      "managerFilePatterns": ["/(^|/)[^/]*Dockerfile$/", "/^\\.github/workflows/.+\\.ya?ml$/", "/^scripts/.+\\.sh$/"],
-      "matchStrings": ["pnpm@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "managerFilePatterns": [
+        "/(^|/)[^/]*Dockerfile$/",
+        "/^\\.github/workflows/.+\\.ya?ml$/",
+        "/^scripts/.+\\.sh$/"
+      ],
+      "matchStrings": [
+        "pnpm@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
       "depNameTemplate": "pnpm",
       "datasourceTemplate": "npm"
     },
     {
       "description": "Go tools run with go run in CI",
       "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
-      "matchStrings": ["go run (?<depName>[a-z0-9./-]+?)(/cmd/[a-z0-9-]+)?@(?<currentValue>v[0-9.]+)"],
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "go run (?<depName>[a-z0-9./-]+?)(/cmd/[a-z0-9-]+)?@(?<currentValue>v[0-9.]+)"
+      ],
       "datasourceTemplate": "go"
+    },
+    {
+      "description": "Worker source builds: tag plus verified commit (ADR 0018)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]*Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+ARG \\w+_VERSION=(?<currentValue>\\S+)\\s+ARG \\w+_COMMIT=(?<currentDigest>[0-9a-f]{40})"
+      ]
     }
   ]
 }

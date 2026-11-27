@@ -1,0 +1,24 @@
+# Packages for the worker build stages (Wolfi), one per line.
+# scripts/update-worker-pins.sh resolves them, including dependencies,
+# into build.lock with exact versions. Edit this file, not build.lock.
+build-base
+busybox
+ca-certificates-bundle
+pkgconf
+git
+meson
+cmake
+rust
+cargo-c
+glib-dev
+expat-dev
+zlib-dev
+libjpeg-turbo-dev
+libpng-dev
+libwebp-dev
+tiff-dev
+libexif-dev
+lcms2-dev
+libjxl-dev
+dav1d-dev
+svt-av1-dev
