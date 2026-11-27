@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Re-pins the given web devDependencies to the newest version that already
 # satisfies pnpm's minimumReleaseAge (web/pnpm-workspace.yaml, ADR 0013).
+# Packages that are already installed are removed and resolved again.
 # pnpm itself picks the version, so no version number is typed by hand.
 #
 # Usage: scripts/pin-mature-deps.sh <package@range> [...]
@@ -23,6 +24,18 @@ docker run --rm \
   "$NODE_IMAGE" \
   sh -euc 'npm install --global "$0" >/dev/null
            pnpm=/tmp/npm-global/bin/pnpm
+           # Remove the packages first: pnpm keeps a locked version that
+           # already satisfies the range and would not pick a newer one.
+           names=$(node -e "
+             console.log(process.argv.slice(1).map(a => a.replace(/@[^@]*$/, \"\")).join(\" \"));
+           " "$@")
+           installed=$(node -e "
+             const d = require(\"./package.json\").devDependencies || {};
+             console.log(process.argv.slice(1).filter(n => n in d).join(\" \"));
+           " $names)
+           if [ -n "$installed" ]; then
+             $pnpm remove --workspace-root --store-dir /tmp/pnpm-store $installed
+           fi
            # Pass 1: let pnpm pick the newest mature version within each range.
            $pnpm add --workspace-root --save-dev --store-dir /tmp/pnpm-store "$@"
            # Pass 2: pnpm keeps a range specifier when one is given, so
