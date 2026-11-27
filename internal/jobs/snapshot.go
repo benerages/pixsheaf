@@ -31,7 +31,11 @@ type File struct {
 	OutputBytes int64
 	OutputName  string
 	// Source is the sanitized upload name with its folder path.
-	Source    string
+	Source string
+	// Kind is KindImage or KindArchive; ArchiveID is set for images that
+	// came from an archive.
+	Kind      string
+	ArchiveID string
 	ErrorCode string
 	ErrorMsg  string
 }
@@ -41,7 +45,7 @@ func (j *job) status() string {
 	switch {
 	case j.canceled:
 		return JobCanceled
-	case len(j.files) < j.expected || j.pending > 0:
+	case j.uploads < j.expected || j.pending > 0:
 		return JobOpen
 	}
 	for _, f := range j.files {
@@ -66,7 +70,7 @@ func (j *job) snapshot() Job {
 
 func (f *file) snapshot() File {
 	s := File{
-		ID: f.id, Index: f.index, Status: f.status,
+		ID: f.id, Index: f.index, Kind: f.kind, ArchiveID: f.archive, Status: f.status,
 		InputBytes: f.inBytes, InputFormat: f.inFormat,
 		ErrorCode: f.errCode, ErrorMsg: f.errMsg,
 	}
@@ -83,8 +87,17 @@ func (f *file) snapshot() File {
 // folders.
 func (f *file) outputName(names uniqueNames) string {
 	folder, base := splitUpload(f.name)
+	index, total := 0, 0
+	for _, g := range f.job.files {
+		if g.kind == KindImage {
+			total++
+			if g.index <= f.index {
+				index++
+			}
+		}
+	}
 	name := expandPattern(f.job.naming.Pattern, nameVars{
-		name: base, index: f.index + 1, total: len(f.job.files),
+		name: base, index: index, total: total,
 		width: f.out.Width, height: f.out.Height, date: f.job.created, format: f.out.Format,
 	})
 	if f.job.naming.KeepFolders && folder != "" {

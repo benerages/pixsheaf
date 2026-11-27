@@ -63,7 +63,9 @@ func claimHandler(tasks TaskSource) http.Handler {
 
 func resultHandler(tasks TaskSource) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		limit := int64(4+jobproto.MaxHeaderBytes) + tasks.Limits().MaxOutputBytes
+		lim := tasks.Limits()
+		// An archive's output is all of its entries (ADR 0022).
+		limit := int64(4+jobproto.MaxHeaderBytes) + max(lim.MaxOutputBytes, lim.MaxJobBytes)
 		body := http.MaxBytesReader(w, r.Body, limit)
 		var resp jobproto.Response
 		if err := jobproto.ReadHeader(body, &resp); err != nil {

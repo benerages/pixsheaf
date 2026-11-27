@@ -125,14 +125,23 @@ type job struct {
 	expires     time.Time
 	files       []*file
 	pending     int // uploads in progress
+	uploads     int // finished uploads; an archive counts as one
 	bytes       int64
 	canceled    bool
 	downloading bool
 }
 
+// File kinds (api/openapi.yaml).
+const (
+	KindImage   = "image"
+	KindArchive = "archive"
+)
+
 type file struct {
 	job      *job
 	id       string
+	kind     string
+	archive  string // ID of the archive an image came from
 	index    int
 	name     string // uploaded name, for naming only; never logged
 	status   string
@@ -264,16 +273,16 @@ func (m *Manager) AddFile(id, uploadedName string, r io.Reader) (File, error) {
 	case !ok:
 		m.mu.Unlock()
 		return File{}, ErrNotFound
-	case j.canceled || len(j.files)+j.pending >= j.expected:
+	case j.canceled || j.uploads+j.pending >= j.expected:
 		m.mu.Unlock()
 		return File{}, ErrNotOpen
 	case m.queue.len() >= m.lim.MaxQueued,
-		m.stored+m.reserved+m.lim.MaxUploadBytes > m.lim.MaxStoredBytes:
+		m.stored+m.reserved+m.maxUpload() > m.lim.MaxStoredBytes:
 		m.mu.Unlock()
 		return File{}, ErrBusy
 	}
 	j.pending++
-	m.reserved += m.lim.MaxUploadBytes
+	m.reserved += m.maxUpload()
 	m.mu.Unlock()
 
 	path, n, format, err := m.store(r)
@@ -281,7 +290,7 @@ func (m *Manager) AddFile(id, uploadedName string, r io.Reader) (File, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	j.pending--
-	m.reserved -= m.lim.MaxUploadBytes
+	m.reserved -= m.maxUpload()
 	if err != nil {
 		return File{}, err
 	}
@@ -294,11 +303,15 @@ func (m *Manager) AddFile(id, uploadedName string, r io.Reader) (File, error) {
 		return File{}, ErrJobTooLarge
 	}
 	f := &file{
-		job: j, id: newID(), index: len(j.files), name: uploadedName,
+		job: j, id: newID(), kind: KindImage, index: len(j.files), name: uploadedName,
 		status: FileQueued, input: path, inBytes: n, inFormat: format,
+	}
+	if format == FormatZip {
+		f.kind = KindArchive
 	}
 	j.bytes += n
 	m.stored += n
+	j.uploads++
 	j.files = append(j.files, f)
 	m.queue.push(f)
 	m.signal()
@@ -320,11 +333,15 @@ func (m *Manager) store(r io.Reader) (path string, n int64, format string, err e
 	if err != nil {
 		return "", 0, "", err
 	}
-	n, err = io.Copy(w, io.MultiReader(bytesReader(head), io.LimitReader(r, m.lim.MaxUploadBytes-int64(k)+1)))
+	limit := m.lim.MaxUploadBytes
+	if format == FormatZip {
+		limit = m.lim.MaxArchiveBytes
+	}
+	n, err = io.Copy(w, io.MultiReader(bytesReader(head), io.LimitReader(r, limit-int64(k)+1)))
 	if cerr := w.Close(); err == nil {
 		err = cerr
 	}
-	if err == nil && n > m.lim.MaxUploadBytes {
+	if err == nil && n > limit {
 		err = ErrTooLarge
 	}
 	if err != nil {
@@ -332,6 +349,11 @@ func (m *Manager) store(r io.Reader) (path string, n int64, format string, err e
 		return "", 0, "", err
 	}
 	return path, n, format, nil
+}
+
+// maxUpload is the largest single upload: an image or an archive.
+func (m *Manager) maxUpload() int64 {
+	return max(m.lim.MaxUploadBytes, m.lim.MaxArchiveBytes)
 }
 
 // create opens a new blob with a random name, mode 0600, and returns its
@@ -367,18 +389,28 @@ func (m *Manager) Claim(ctx context.Context) (Task, error) {
 				m.mu.Unlock()
 				continue
 			}
-			id := newID()
-			f.status = FileProcessing
-			m.leases[id] = &lease{file: f, deadline: m.now().Add(m.lim.LeaseTimeout)}
-			m.inFlight++
-			t := Task{ID: id, Input: in, Request: jobproto.Request{
+			req := jobproto.Request{
 				Op:              jobproto.OpProcess,
 				InputBytes:      f.inBytes,
 				MaxPixels:       m.lim.MaxInputPixels,
 				MaxOutputPixels: m.lim.MaxOutputPixels,
 				MaxFrames:       m.lim.MaxFrames,
 				Pipeline:        f.job.pipeline,
-			}}
+			}
+			if f.kind == KindArchive {
+				req = m.unzipRequest(f)
+				if req.MaxFiles < 1 {
+					_ = in.Close()
+					m.failLocked(f, jobproto.CodeTooManyFiles, fmt.Sprintf("the job already has %d files", m.lim.MaxFiles))
+					m.mu.Unlock()
+					continue
+				}
+			}
+			id := newID()
+			f.status = FileProcessing
+			m.leases[id] = &lease{file: f, deadline: m.now().Add(m.lim.LeaseTimeout)}
+			m.inFlight++
+			t := Task{ID: id, Input: in, Request: req}
 			m.mu.Unlock()
 			return t, nil
 		}
@@ -407,6 +439,9 @@ func (m *Manager) Complete(taskID string, resp jobproto.Response, output io.Read
 		return ErrUnknownTask
 	}
 	f := l.file
+	if f.kind == KindArchive {
+		return m.completeArchive(f, resp, output)
+	}
 
 	if resp.Error != nil {
 		m.mu.Lock()
@@ -552,7 +587,7 @@ func (m *Manager) TakeDownload(id string) (Download, error) {
 		return Download{}, ErrNotReady
 	}
 
-	if j.expected == 1 && len(j.files) == 1 {
+	if j.expected == 1 && len(j.files) == 1 && j.files[0].kind == KindImage {
 		f := j.files[0]
 		if f.status != FileDone {
 			return Download{}, ErrNoResult

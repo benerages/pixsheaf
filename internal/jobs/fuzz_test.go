@@ -9,7 +9,7 @@ import (
 
 var sniffFormats = map[string]bool{
 	"": true, "jpeg": true, "png": true, "gif": true, "webp": true, "tiff": true,
-	"bmp": true, "jxl": true, "avif": true, "heif": true,
+	"bmp": true, "jxl": true, "avif": true, "heif": true, "zip": true,
 }
 
 func FuzzSniff(f *testing.F) {

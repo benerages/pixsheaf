@@ -86,9 +86,13 @@ func run() int {
 		return 1
 	}
 
-	runner := newRunner(cfg)
+	runners := runners{
+		images: newRunner(cfg),
+		// An archive's output is all of its accepted entries (ADR 0022).
+		archives: jobexec.NewRunner(cfg.JobTimeout, uint64(cfg.JobMemoryMB)<<20, int64(cfg.MaxJobMB)<<20), //nolint:gosec // G115: JobMemoryMB is validated to 64-65536
+	}
 	client := transport.NewClient(cfg.SocketPath, 0)
-	maxInput := int64(cfg.MaxUploadMB) << 20
+	maxInput := int64(max(cfg.MaxUploadMB, cfg.MaxArchiveMB)) << 20
 	logger.Info("started", "version", version.Version, "socket", cfg.SocketPath, "slots", cfg.MaxConcurrency)
 
 	// Each slot claims and processes one file at a time. On SIGTERM the
@@ -96,7 +100,7 @@ func run() int {
 	// (graceful shutdown); the job timeout bounds how long that takes.
 	var wg sync.WaitGroup
 	for slot := range cfg.MaxConcurrency {
-		wg.Go(func() { work(stopCtx, logger.With("slot", slot), client, runner, maxInput) })
+		wg.Go(func() { work(stopCtx, logger.With("slot", slot), client, runners, maxInput) })
 	}
 	wg.Wait()
 	logger.Info("stopped")
@@ -107,7 +111,13 @@ func newRunner(cfg config.Config) jobexec.Runner {
 	return jobexec.NewRunner(cfg.JobTimeout, uint64(cfg.JobMemoryMB)<<20, int64(cfg.MaxOutputMB)<<20) //nolint:gosec // G115: JobMemoryMB is validated to 64-65536
 }
 
-func work(stopCtx context.Context, logger *slog.Logger, client *http.Client, runner jobexec.Runner, maxInput int64) {
+// runners start job processes for images and for archives, which differ
+// in their output limit.
+type runners struct {
+	images, archives jobexec.Runner
+}
+
+func work(stopCtx context.Context, logger *slog.Logger, client *http.Client, runners runners, maxInput int64) {
 	for stopCtx.Err() == nil {
 		task, err := transport.Claim(stopCtx, client, maxInput)
 		switch {
@@ -124,6 +134,10 @@ func work(stopCtx context.Context, logger *slog.Logger, client *http.Client, run
 
 		runCtx := context.WithoutCancel(stopCtx)
 		start := time.Now()
+		runner := runners.images
+		if task.Request.Op == jobproto.OpUnzip {
+			runner = runners.archives
+		}
 		resp, output, err := runner.Run(runCtx, task.Request, task.Input)
 		if err != nil {
 			code := jobproto.CodeInternal

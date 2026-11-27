@@ -3,6 +3,7 @@ package jobproto
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -56,5 +57,19 @@ func TestWriteHeaderRejectsOversizedHeader(t *testing.T) {
 	err := WriteHeader(&bytes.Buffer{}, Error{Message: strings.Repeat("x", MaxHeaderBytes)})
 	if err == nil {
 		t.Fatal("WriteHeader succeeded, want an error")
+	}
+}
+
+func TestHeaderCarriesLargeWatermark(t *testing.T) {
+	// A pipeline with an image watermark at the hard limit (1 MiB as base64).
+	pipeline := `{"version":1,"steps":[{"op":"watermark","params":{"image":"` + strings.Repeat("A", 1398104) + `"}}]}`
+	req := Request{Op: OpProcess, InputBytes: 1, Pipeline: json.RawMessage(pipeline)}
+	var buf bytes.Buffer
+	if err := WriteHeader(&buf, req); err != nil {
+		t.Fatal(err)
+	}
+	var got Request
+	if err := ReadHeader(&buf, &got); err != nil || len(got.Pipeline) != len(pipeline) {
+		t.Fatalf("round trip: %v, %d bytes", err, len(got.Pipeline))
 	}
 }

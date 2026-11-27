@@ -39,6 +39,7 @@ jobs:
         run: |
           docker compose up --detach --build --wait
           bash tests/e2e/single-image.sh
+          bash tests/e2e/batch.sh
       - name: Stop the stack
         if: always()
         run: |

@@ -99,7 +99,7 @@ func (a *jobAPI) capabilities(w http.ResponseWriter, _ *http.Request) {
 		maxSteps = a.opts.MaxSteps
 	}
 	writeJSON(w, http.StatusOK, api.Capabilities{
-		InputFormats:    []api.InputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "heif", "jxl"},
+		InputFormats:    []api.InputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "heif", "jxl", "zip"},
 		OutputFormats:   []api.OutputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "jxl", "pdf"},
 		PipelineVersion: pipeline.Version,
 		Limits: api.Limits{
@@ -249,7 +249,8 @@ func (a *jobAPI) uploadFile(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	lim := a.m.Limits()
-	r.Body = http.MaxBytesReader(w, r.Body, lim.MaxUploadBytes+multipartOverhead)
+	maxFile := max(lim.MaxUploadBytes, lim.MaxArchiveBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, maxFile+multipartOverhead)
 	mr, err := r.MultipartReader()
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, codeRequestInvalid, "the multipart body could not be read")
@@ -267,7 +268,8 @@ func (a *jobAPI) uploadFile(w http.ResponseWriter, r *http.Request, id string) {
 	switch {
 	case err == nil:
 	case errors.Is(err, jobs.ErrTooLarge), errors.As(err, &mbe):
-		writeProblem(w, http.StatusRequestEntityTooLarge, codeFileTooLarge, fmt.Sprintf("files are limited to %d bytes", lim.MaxUploadBytes))
+		writeProblem(w, http.StatusRequestEntityTooLarge, codeFileTooLarge,
+			fmt.Sprintf("images are limited to %d bytes and ZIP archives to %d bytes", lim.MaxUploadBytes, lim.MaxArchiveBytes))
 		return
 	case errors.Is(err, jobs.ErrJobTooLarge):
 		writeProblem(w, http.StatusRequestEntityTooLarge, codeJobTooLarge, fmt.Sprintf("all files of a job are limited to %d bytes", lim.MaxJobBytes))
@@ -530,8 +532,14 @@ func toAPIJob(j jobs.Job) api.Job {
 func toAPIFile(f jobs.File) api.JobFile {
 	source := f.Source
 	out := api.JobFile{
-		Id: f.ID, Index: f.Index, Kind: api.Image, Status: api.FileStatus(f.Status), Source: &source,
-		Input: &api.ImageInfo{Bytes: int(f.InputBytes), Format: api.InputFormat(f.InputFormat)},
+		Id: f.ID, Index: f.Index, Kind: api.JobFileKind(f.Kind), Status: api.FileStatus(f.Status), Source: &source,
+	}
+	if f.InputFormat != "" {
+		out.Input = &api.ImageInfo{Bytes: int(f.InputBytes), Format: api.InputFormat(f.InputFormat)}
+	}
+	if f.ArchiveID != "" {
+		archive := f.ArchiveID
+		out.ArchiveId = &archive
 	}
 	if f.Output != nil {
 		pages := f.Output.Pages

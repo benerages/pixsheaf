@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/benerages/pixsheaf/internal/archive"
 	"github.com/benerages/pixsheaf/internal/imaging"
 	"github.com/benerages/pixsheaf/internal/jobproto"
 	"github.com/benerages/pixsheaf/internal/pipeline"
@@ -53,6 +54,9 @@ func Child(args []string, stdin io.Reader, stdout io.Writer) int {
 		return 1
 	}
 
+	if req.Op == jobproto.OpUnzip {
+		return unzip(req, input, stdout)
+	}
 	resp, output := handle(req, input)
 	resp.OutputBytes = int64(len(output))
 	if err := jobproto.WriteHeader(stdout, resp); err != nil {
@@ -61,6 +65,45 @@ func Child(args []string, stdin io.Reader, stdout io.Writer) int {
 	}
 	if _, err := stdout.Write(output); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "job: writing output:", err)
+		return 1
+	}
+	return 0
+}
+
+// maxArchiveRatio bounds real size against compressed size per entry.
+const maxArchiveRatio = 100
+
+// unzip checks an archive and streams its accepted entries (ADR 0022).
+// Only the archive is held in memory, never the unpacked entries.
+func unzip(req jobproto.Request, input []byte, stdout io.Writer) int {
+	entries, err := archive.Scan(input, archive.Limits{
+		MaxEntries:    req.MaxEntries,
+		MaxFiles:      req.MaxFiles,
+		MaxEntryBytes: req.MaxEntryBytes,
+		MaxTotalBytes: req.MaxTotalBytes,
+		MaxRatio:      maxArchiveRatio,
+	})
+	var resp jobproto.Response
+	switch {
+	case errors.Is(err, archive.ErrTooManyFiles):
+		resp = failure(jobproto.CodeTooManyFiles, err.Error())
+	case err != nil:
+		resp = failure(jobproto.CodeArchiveInvalid, "the archive could not be read")
+	default:
+		for _, e := range entries {
+			resp.Entries = append(resp.Entries, jobproto.ArchiveEntry{Name: e.Name, Bytes: e.Bytes, Code: e.Skip})
+			resp.OutputBytes += e.Bytes
+		}
+	}
+	if err := jobproto.WriteHeader(stdout, resp); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "job: writing response:", err)
+		return 1
+	}
+	if resp.Error != nil {
+		return 0
+	}
+	if err := archive.Write(input, entries, stdout); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "job: writing entries:", err)
 		return 1
 	}
 	return 0

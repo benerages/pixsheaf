@@ -15,8 +15,10 @@ import (
 	"github.com/benerages/pixsheaf/internal/sandbox"
 )
 
-// MaxHeaderBytes bounds a header in either direction.
-const MaxHeaderBytes = 64 << 10
+// MaxHeaderBytes bounds a header in either direction. A request carries
+// the pipeline, which may embed an image watermark of up to 1 MiB in
+// base64 (about 1.4 MB); a response may list the entries of an archive.
+const MaxHeaderBytes = 4 << 20
 
 // Op selects what a job process does.
 type Op string
@@ -30,6 +32,10 @@ const (
 	OpSandboxCheck Op = "sandbox-check"
 	// OpProcess runs a pipeline and returns the encoded result.
 	OpProcess Op = "process"
+	// OpUnzip checks a ZIP archive and returns its files (ADR 0022): the
+	// response lists the entries, and the output is the accepted entries
+	// concatenated in that order.
+	OpUnzip Op = "unzip"
 )
 
 // Request is sent by the supervisor.
@@ -45,6 +51,11 @@ type Request struct {
 	// MaxFrames bounds the frames of animated GIF and WebP input; zero
 	// means the hard limit (imaging.MaxFrames).
 	MaxFrames int `json:"maxFrames,omitempty"`
+	// Archive limits for OpUnzip (see archive.Limits).
+	MaxEntries    int   `json:"maxEntries,omitempty"`
+	MaxFiles      int   `json:"maxFiles,omitempty"`
+	MaxEntryBytes int64 `json:"maxEntryBytes,omitempty"`
+	MaxTotalBytes int64 `json:"maxTotalBytes,omitempty"`
 	// Pipeline is the pipeline document for OpProcess (api/openapi.yaml).
 	// The job process validates it again.
 	Pipeline json.RawMessage `json:"pipeline,omitempty"`
@@ -56,6 +67,8 @@ type Response struct {
 	Image   *ImageInfo      `json:"image,omitempty"`
 	Output  *ImageInfo      `json:"output,omitempty"`
 	Sandbox *sandbox.Report `json:"sandbox,omitempty"`
+	// Entries lists the files of an archive (OpUnzip).
+	Entries []ArchiveEntry `json:"entries,omitempty"`
 	// OutputBytes is the exact number of output bytes after the header.
 	OutputBytes int64 `json:"outputBytes"`
 }
@@ -70,6 +83,8 @@ const (
 	CodeStepNotApplicable = "step_not_applicable"
 	CodeTargetUnreachable = "target_size_unreachable"
 	CodeTimeout           = "timeout"
+	CodeTooManyFiles      = "too_many_files"
+	CodeArchiveInvalid    = "archive_invalid"
 	CodeInternal          = "internal"
 )
 
@@ -77,6 +92,14 @@ const (
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// ArchiveEntry is one file of an unpacked archive. Code is empty for an
+// accepted entry and a FileError code for a skipped one.
+type ArchiveEntry struct {
+	Name  string `json:"name"`
+	Bytes int64  `json:"bytes"`
+	Code  string `json:"code,omitempty"`
 }
 
 // ImageInfo describes an image header.

@@ -2,6 +2,10 @@ package jobs
 
 import "bytes"
 
+// FormatZip marks a ZIP archive, which is unpacked in the worker sandbox
+// (ADR 0022).
+const FormatZip = "zip"
+
 // SniffLen is the number of leading bytes Sniff needs.
 const SniffLen = 32
 
@@ -28,6 +32,8 @@ func Sniff(b []byte) string {
 		return "jxl"
 	case len(b) >= 12 && bytes.Equal(b[4:8], []byte("ftyp")):
 		return isobmff(b)
+	case bytes.HasPrefix(b, []byte("PK\x03\x04")), bytes.HasPrefix(b, []byte("PK\x05\x06")):
+		return FormatZip
 	}
 	return ""
 }
