@@ -1,0 +1,67 @@
+# Refreshes the worker's Wolfi base digest and package lock every week
+# (ADR 0018). Renovate cannot update apk locks, and without a refresh the
+# weekly rebuild would not pick up codec fixes. The job verifies the new
+# lock with the libvips tests and opens a pull request.
+#
+# Pull requests opened with GITHUB_TOKEN do not trigger other workflows;
+# the full container tests and Grype run when the pull request is merged.
+# Requires: Settings > Actions > General > "Allow GitHub Actions to create
+# and approve pull requests".
+name: wolfi-lock
+
+on:
+  schedule:
+    # Mondays 03:41 UTC, before the weekly container rebuild.
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: wolfi-lock
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh Wolfi lock
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Resolve pins
+        run: bash scripts/update-worker-pins.sh
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Lock is current."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat
+          fi
+      - name: Verify with the libvips tests
+        if: steps.diff.outputs.changed == 'true'
+        run: docker build --file deploy/docker/worker.Dockerfile --target test .
+      - name: Open pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="chore/wolfi-lock-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git
+          git switch -c "$branch"
+          git commit -am "build(worker): refresh Wolfi base digest and package lock"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "build(worker): refresh Wolfi base digest and package lock" \
+            --body "Weekly refresh by the wolfi-lock workflow (ADR 0018). The libvips tests passed with the new lock. Container tests and Grype run after merge."

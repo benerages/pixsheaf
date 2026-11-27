@@ -42,7 +42,7 @@ Option (a), chosen by the project owner.
 
 - The open trixie issues above do not apply; codec fixes arrive as soon as Wolfi packages them and the lock is refreshed.
 - The runtime image has no shell. Debugging uses `docker cp` or a debug build of the `rootfs` stage.
-- Wolfi is a rolling distribution and removes old package versions over time, so a stale `build.lock` eventually stops building. The lock must be refreshed regularly. Until a scheduled refresh workflow exists, run `scripts/update-worker-pins.sh` at least weekly and on every Wolfi advisory for a worker library. The weekly scheduled rebuild alone no longer picks up codec fixes, because versions are locked.
+- Wolfi is a rolling distribution and removes old package versions over time, so a stale `build.lock` eventually stops building. The weekly scheduled rebuild alone no longer picks up codec fixes, because versions are locked. The `wolfi-lock` workflow therefore refreshes the base digest and the lock every Monday, verifies them with the libvips tests, and opens a pull request. Run `scripts/update-worker-pins.sh` by hand on a Wolfi advisory for a worker library.
 - libvips, libheif, libde265, cgif, and quantizr are in `/usr/local` and are not in the apk database, so image scanners do not see them. The project tracks their advisories itself (as already required by ADR 0004); a supplementary SBOM entry is planned for the release workflow (Phase 6).
 - The base digest is updated by Renovate; the lock file is not. A digest update without a lock refresh still builds, because the lock pins versions independently of the base.
 - jemalloc (recommended for glibc in ADR 0004) is not yet used; evaluate it with the load tests in Phase 4.
