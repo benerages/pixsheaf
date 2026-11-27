@@ -3,7 +3,15 @@ import tseslint from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
 export default tseslint.config(
-  { ignores: ["node_modules/", "../internal/ui/dist/", "src/lib/api/schema.d.ts"] },
+  {
+    ignores: [
+      "node_modules/",
+      "../internal/ui/dist/",
+      "src/lib/api/schema.d.ts",
+      "playwright-report/",
+      "test-results/",
+    ],
+  },
   ...tseslint.configs.strict,
   ...svelte.configs.recommended,
   {

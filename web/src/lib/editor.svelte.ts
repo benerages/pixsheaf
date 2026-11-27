@@ -2,6 +2,7 @@
 // is derived from the quick settings unless a preset or the advanced editor
 // set it directly.
 import type { Naming, Pipeline, Preset } from "./api/client";
+import { checkPattern } from "./naming";
 import { buildPipeline, defaultSettings, type Settings } from "./pipeline";
 
 export class Editor {
@@ -14,6 +15,8 @@ export class Editor {
 
   pipeline = $derived<Pipeline>(this.custom ?? buildPipeline(this.settings));
   naming = $derived<Naming>({ pattern: this.pattern, keepFolders: this.keepFolders });
+  /** The first problem of the name pattern, or null. */
+  patternProblem = $derived(checkPattern(this.pattern));
 
   applyPreset(preset: Preset): void {
     this.custom = structuredClone($state.snapshot(preset.pipeline)) as Pipeline;

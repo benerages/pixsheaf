@@ -1,4 +1,6 @@
 pnpm-lock.yaml
 public/
+playwright-report/
+test-results/
 # Generated from api/openapi.yaml
 src/lib/api/schema.d.ts

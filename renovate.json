@@ -31,6 +31,14 @@
         "typescript"
       ],
       "allowedVersions": "<6.1.0"
+    },
+    {
+      "description": "Keep the Playwright library and its browser image in step (tests/e2e/ui.Dockerfile)",
+      "matchPackageNames": [
+        "@playwright/test",
+        "mcr.microsoft.com/playwright"
+      ],
+      "groupName": "Playwright"
     }
   ],
   "customManagers": [

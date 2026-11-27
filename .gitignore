@@ -4,6 +4,8 @@
 
 # Web
 node_modules/
+/web/playwright-report/
+/web/test-results/
 /internal/ui/dist/*
 !/internal/ui/dist/index.html
 

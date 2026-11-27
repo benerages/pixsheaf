@@ -130,7 +130,10 @@ jobs:
       contents: read
     strategy:
       matrix:
-        dockerfile: [deploy/docker/api.Dockerfile, deploy/docker/worker.Dockerfile]
+        dockerfile:
+          - deploy/docker/api.Dockerfile
+          - deploy/docker/worker.Dockerfile
+          - tests/e2e/ui.Dockerfile
     steps:
       - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:

@@ -6,6 +6,7 @@
   import { changePercent, formatBytes, formatPercent } from "../format";
   import { errorText, numberLocale, t } from "../i18n/i18n.svelte";
   import type { MessageKey } from "../i18n/messages";
+  import { baseName, type ExampleVars } from "../naming";
   import { Preview } from "../preview.svelte";
   import Compare from "./Compare.svelte";
   import SettingsPanel from "./SettingsPanel.svelte";
@@ -58,6 +59,24 @@
   });
 
   const locale = $derived(numberLocale());
+
+  // Name example for the previewed file, with its real output size.
+  const example = $derived.by((): ExampleVars | null => {
+    const out = preview.output;
+    if (!previewFile || !out) {
+      return null;
+    }
+    const index = batch.images.findIndex((r) => r.local === previewFile) + 1;
+    return {
+      name: baseName(previewFile.path),
+      index: Math.max(index, 1),
+      total: batch.images.length,
+      width: out.width,
+      height: out.height,
+      format: out.format,
+      date: new Date(),
+    };
+  });
   const total = $derived(batch.rows.reduce((sum, r) => sum + (r.local ? r.bytes : 0), 0));
   const images = $derived(batch.images.length);
   const done = $derived(batch.finished);
@@ -79,7 +98,7 @@
 <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
   <section class="min-w-0 space-y-4" aria-labelledby="batch-title">
     <div class="flex flex-wrap items-baseline justify-between gap-2">
-      <h2 id="batch-title" class="text-xl font-semibold">{t("batch.title", { count: images })}</h2>
+      <h2 id="batch-title" class="text-xl font-semibold">{images === 1 ? t("batch.titleOne") : t("batch.title", { count: images })}</h2>
       <p class="muted text-sm tabular-nums">{t("batch.totalSize", { size: formatBytes(total, locale) })}</p>
     </div>
 
@@ -118,22 +137,28 @@
         <thead class="muted border-b border-stone-200 text-xs dark:border-stone-800">
           <tr>
             <th scope="col" class="px-3 py-2 font-medium">{t("batch.file")}</th>
-            <th scope="col" class="px-3 py-2 font-medium">{t("batch.size")}</th>
+            <th scope="col" class="hidden px-3 py-2 font-medium sm:table-cell">{t("batch.size")}</th>
             <th scope="col" class="px-3 py-2 font-medium">{t("batch.status")}</th>
-            <th scope="col" class="px-3 py-2 font-medium">{t("batch.result")}</th>
+            <th scope="col" class="hidden px-3 py-2 font-medium sm:table-cell">{t("batch.result")}</th>
             <th scope="col" class="px-3 py-2 font-medium"><span class="sr-only">{t("batch.actions")}</span></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-stone-100 dark:divide-stone-800">
           {#each batch.rows as row, i (row.key)}
             <tr>
-              <td class="max-w-64 truncate px-3 py-2" title={row.name}>
+              <td class="max-w-40 truncate px-3 py-2 sm:max-w-64" title={row.name}>
                 {row.name}
+                <span class="muted block text-xs tabular-nums sm:hidden">
+                  {formatBytes(row.bytes, locale)}
+                  {#if row.file?.output}
+                    → {formatBytes(row.file.output.bytes, locale)}
+                  {/if}
+                </span>
                 {#if row.file?.archiveId}
                   <span class="muted block text-xs">{t("batch.fromArchive", { name: batch.archiveName(row.file) })}</span>
                 {/if}
               </td>
-              <td class="px-3 py-2 tabular-nums">{formatBytes(row.bytes, locale)}</td>
+              <td class="hidden px-3 py-2 tabular-nums sm:table-cell">{formatBytes(row.bytes, locale)}</td>
               <td class="px-3 py-2">
                 <span class={row.status === "failed" ? "text-red-700 dark:text-red-400" : row.status === "done" ? "text-accent-700 dark:text-accent-300" : ""}>
                   {t(statusKey(row))}
@@ -142,7 +167,7 @@
                   <span class="muted block text-xs">{errorText(row.error)}</span>
                 {/if}
               </td>
-              <td class="px-3 py-2 tabular-nums">
+              <td class="hidden px-3 py-2 tabular-nums sm:table-cell">
                 {#if row.file?.output}
                   {formatBytes(row.file.output.bytes, locale)}
                   <span class="muted text-xs">{formatPercent(changePercent(row.bytes, row.file.output.bytes), locale)}</span>
@@ -186,8 +211,9 @@
 
     <div class="flex flex-wrap items-center gap-3">
       {#if !batch.started}
-        <button type="button" class="btn-primary" onclick={start} disabled={batch.rows.length === 0}>
-          {t("batch.start", { count: images })}
+        <button type="button" class="btn-primary" onclick={start}
+          disabled={batch.rows.length === 0 || editor.patternProblem !== null}>
+          {images === 1 ? t("batch.startOne") : t("batch.start", { count: images })}
         </button>
       {:else if allDone && !batch.zipDownloaded}
         <a class="btn-primary" href={batch.zipUrl()} download onclick={() => (batch.zipDownloaded = true)}>
@@ -204,6 +230,6 @@
   </section>
 
   <aside class="lg:sticky lg:top-4 lg:self-start">
-    <SettingsPanel {editor} naming />
+    <SettingsPanel {editor} naming {example} />
   </aside>
 </div>

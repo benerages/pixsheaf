@@ -1,0 +1,8 @@
+# Build context for tests/e2e/ui.Dockerfile: only what the tests need.
+*
+!web/package.json
+!web/pnpm-lock.yaml
+!web/pnpm-workspace.yaml
+!web/playwright.config.ts
+!web/e2e/
+!tests/e2e/fixtures/

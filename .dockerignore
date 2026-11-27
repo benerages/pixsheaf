@@ -1,6 +1,10 @@
 .git
 .github
 **/node_modules
+web/e2e
+web/playwright.config.ts
+web/playwright-report
+web/test-results
 docs
 spikes
 tests

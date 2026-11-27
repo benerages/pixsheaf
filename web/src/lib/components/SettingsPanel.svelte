@@ -12,8 +12,13 @@
     type ResizeMode,
   } from "../pipeline";
   import { exportPreset, importPreset, presets, slug } from "../presets.svelte";
+  import { expandPattern, type ExampleVars } from "../naming";
 
-  let { editor, naming = false }: { editor: Editor; naming?: boolean } = $props();
+  let {
+    editor,
+    naming = false,
+    example = null,
+  }: { editor: Editor; naming?: boolean; example?: ExampleVars | null } = $props();
 
   const s = $derived(editor.settings);
   const quick = $derived(editor.custom === null);
@@ -69,14 +74,41 @@
     s.rotate = (((s.rotate + delta) % 360) + 360) % 360 as 0 | 90 | 180 | 270;
   }
 
-  function savePreset() {
-    const title = window.prompt(t("settings.savePrompt"))?.trim();
+  let saving = $state(false);
+  let saveTitle = $state("");
+  let saveInput: HTMLInputElement | undefined = $state();
+
+  $effect(() => {
+    if (saving) {
+      saveInput?.focus();
+    }
+  });
+
+  function savePreset(e: SubmitEvent) {
+    e.preventDefault();
+    const title = saveTitle.trim().slice(0, 100);
     if (title) {
-      const preset = editor.toPreset(slug(title), title.slice(0, 100));
+      const preset = editor.toPreset(slug(title), title);
       presets.save(preset);
       editor.applyPreset(preset);
+      saving = false;
+      saveTitle = "";
     }
   }
+
+  const patternMessage = $derived.by(() => {
+    const p = editor.patternProblem;
+    if (!p) {
+      return "";
+    }
+    if (p.kind === "length") {
+      return t("batch.patternLength");
+    }
+    if (p.kind === "unmatched") {
+      return t("batch.patternUnmatched", { brace: p.brace });
+    }
+    return t("batch.patternUnknown", { placeholder: `{${p.name}}` });
+  });
 
   async function imported(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
@@ -119,9 +151,60 @@
     </select>
     {#if editor.presetId}
       <p class="muted mt-2 text-sm">{presets.find(editor.presetId)?.description ?? ""}</p>
+      <p class="muted mt-2 text-xs">
+        {t("settings.presetLocked")}
+        <button type="button" class="text-accent-700 underline dark:text-accent-300" onclick={() => editor.useQuickSettings()}>
+          {t("settings.presetUnlock")}
+        </button>
+      </p>
     {/if}
     {#if !quick && !editor.presetId}
       <p class="muted mt-2 text-sm">{t("settings.custom")}</p>
+    {/if}
+    {#if saving}
+      <form class="mt-3 flex flex-wrap items-end gap-2" onsubmit={savePreset}>
+        <div class="min-w-40 flex-1">
+          <label class="label" for="preset-title">{t("settings.savePrompt")}</label>
+          <input
+            id="preset-title"
+            bind:this={saveInput}
+            bind:value={saveTitle}
+            type="text"
+            maxlength="100"
+            required
+            class="field"
+            onkeydown={(e) => {
+              if (e.key === "Escape") {
+                saving = false;
+              }
+            }}
+          />
+        </div>
+        <button type="submit" class="btn-primary">{t("settings.saveConfirm")}</button>
+        <button type="button" class="btn-secondary" onclick={() => (saving = false)}>
+          {t("settings.saveCancel")}
+        </button>
+      </form>
+    {:else}
+      <div class="mt-2 -ml-2 flex flex-wrap gap-1">
+        <button type="button" class="btn-quiet" onclick={() => (saving = true)}>{t("settings.save")}</button>
+        <button type="button" class="btn-quiet" onclick={exportCurrent}>{t("settings.export")}</button>
+        <button type="button" class="btn-quiet" onclick={() => importInput?.click()}>{t("settings.import")}</button>
+        {#if editor.presetId.startsWith("custom-")}
+          <button
+            type="button"
+            class="btn-quiet"
+            onclick={() => {
+              presets.remove(editor.presetId);
+              editor.useQuickSettings();
+            }}>{t("settings.delete")}</button
+          >
+        {/if}
+      </div>
+    {/if}
+    <input bind:this={importInput} type="file" accept="application/json,.json" class="hidden" onchange={imported} />
+    {#if importError}
+      <p class="mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{t("settings.importInvalid")}</p>
     {/if}
   </div>
 
@@ -281,8 +364,23 @@
       <legend class="text-sm font-semibold">{t("batch.naming")}</legend>
       <div>
         <label class="label" for="pattern">{t("batch.pattern")}</label>
-        <input id="pattern" type="text" maxlength="200" bind:value={editor.pattern} class="field font-mono" aria-describedby="pattern-hint" />
+        <input
+          id="pattern"
+          type="text"
+          maxlength="200"
+          bind:value={editor.pattern}
+          class="field font-mono"
+          aria-invalid={patternMessage !== ""}
+          aria-describedby="pattern-hint pattern-status"
+        />
         <p id="pattern-hint" class="muted mt-1 text-xs">{t("batch.patternHint")}</p>
+        <p id="pattern-status" class="mt-1 text-xs break-all" aria-live="polite">
+          {#if patternMessage}
+            <span class="text-red-700 dark:text-red-400">{patternMessage}</span>
+          {:else if example}
+            <span class="muted">{t("batch.patternExample", { example: expandPattern(editor.pattern, example) })}</span>
+          {/if}
+        </p>
       </div>
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" bind:checked={editor.keepFolders} class="size-4 accent-accent-700" />
@@ -315,24 +413,5 @@
         </button>
       {/if}
     </div>
-    <div class="mt-4 flex flex-wrap gap-2 border-t border-stone-200 pt-4 dark:border-stone-800">
-      <button type="button" class="btn-quiet" onclick={savePreset}>{t("settings.save")}</button>
-      <button type="button" class="btn-quiet" onclick={exportCurrent}>{t("settings.export")}</button>
-      <button type="button" class="btn-quiet" onclick={() => importInput?.click()}>{t("settings.import")}</button>
-      {#if editor.presetId.startsWith("custom-")}
-        <button
-          type="button"
-          class="btn-quiet"
-          onclick={() => {
-            presets.remove(editor.presetId);
-            editor.useQuickSettings();
-          }}>{t("settings.delete")}</button
-        >
-      {/if}
-      <input bind:this={importInput} type="file" accept="application/json,.json" class="hidden" onchange={imported} />
-    </div>
-    {#if importError}
-      <p class="mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{t("settings.importInvalid")}</p>
-    {/if}
   </details>
 </div>
