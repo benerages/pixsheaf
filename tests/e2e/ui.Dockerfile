@@ -17,9 +17,11 @@ COPY web/playwright.config.ts ./
 COPY web/e2e/ e2e/
 COPY tests/e2e/fixtures/ /src/tests/e2e/fixtures/
 
-# Run as the image's unprivileged user: Firefox needs a real account with a
-# home folder. Results go to /out and are copied out by ui.sh.
-RUN install -d -o pwuser -g pwuser /out
-USER pwuser
-ENV HOME=/home/pwuser PW_OUTPUT=/out
+# Run as an unprivileged account with a fixed UID (like the other images):
+# Firefox needs a real account with a home folder. Results go to /out and
+# are copied out by ui.sh.
+RUN useradd --uid 10001 --user-group --create-home --shell /usr/sbin/nologin pixtest \
+ && install -d -o 10001 -g 10001 /out
+USER 10001:10001
+ENV HOME=/home/pixtest PW_OUTPUT=/out
 CMD ["node_modules/.bin/playwright", "test"]
