@@ -1,0 +1,15 @@
+{
+  "format": "pixsheaf-preset",
+  "id": "thumbnail",
+  "title": "Thumbnail",
+  "description": "Square 320 x 320 thumbnails cropped around the most interesting area, WebP at quality 75.",
+  "pipeline": {
+    "version": 1,
+    "steps": [
+      {"op": "autoOrient"},
+      {"op": "resize", "params": {"width": 320, "height": 320, "mode": "crop", "gravity": "attention"}},
+      {"op": "convert", "params": {"format": "webp", "quality": 75}}
+    ]
+  },
+  "naming": {"pattern": "{name}_thumb"}
+}

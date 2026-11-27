@@ -19,7 +19,7 @@ func testLimits() Limits {
 	return Limits{
 		MaxUploadBytes: 1000, MaxJobBytes: 5000, MaxFiles: 10, MaxOutputBytes: 1000,
 		MaxInputPixels: 100, MaxOutputPixels: 200, MaxFrames: 3,
-		MaxConcurrency: 1, MaxQueued: 2, MaxJobs: 3, MaxStoredBytes: 1 << 20,
+		MaxConcurrency: 1, MaxQueued: 2, MaxJobs: 3, MaxJobsPerClient: 3, MaxStoredBytes: 1 << 20,
 		TTL: time.Minute, LeaseTimeout: 10 * time.Second,
 	}
 }
@@ -70,7 +70,7 @@ func okResponse(n int) jobproto.Response {
 
 func TestSingleFileLifecycle(t *testing.T) {
 	m, _, dir := newManager(t)
-	j, token, err := m.Create([]byte(`{"version":1,"steps":[]}`), 1)
+	j, token, err := m.Create([]byte(`{"version":1,"steps":[]}`), 1, Naming{}, "client")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestSingleFileLifecycle(t *testing.T) {
 
 func TestUploadRejected(t *testing.T) {
 	m, _, dir := newManager(t)
-	j, _, _ := m.Create([]byte(`{}`), 1)
+	j, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	if _, err := m.AddFile(j.ID, "x", strings.NewReader("<svg>")); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("svg: err = %v", err)
 	}
@@ -167,7 +167,7 @@ func TestUploadRejected(t *testing.T) {
 func TestQueueAndJobLimits(t *testing.T) {
 	m, _, _ := newManager(t)
 	for i := range 2 {
-		j, _, err := m.Create([]byte(`{}`), 1)
+		j, _, err := m.Create([]byte(`{}`), 1, Naming{}, "client")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -175,17 +175,17 @@ func TestQueueAndJobLimits(t *testing.T) {
 			t.Fatalf("upload %d: %v", i, err)
 		}
 	}
-	j, _, err := m.Create([]byte(`{}`), 1)
+	j, _, err := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.AddFile(j.ID, "x", bytes.NewReader(pngHeader)); !errors.Is(err, ErrBusy) {
 		t.Errorf("full queue: err = %v, want ErrBusy", err)
 	}
-	if _, _, err := m.Create([]byte(`{}`), 1); !errors.Is(err, ErrTooManyJobs) {
+	if _, _, err := m.Create([]byte(`{}`), 1, Naming{}, "client"); !errors.Is(err, ErrTooManyJobs) {
 		t.Errorf("fourth job: err = %v, want ErrTooManyJobs", err)
 	}
-	if _, _, err := m.Create([]byte(`{}`), 11); err == nil {
+	if _, _, err := m.Create([]byte(`{}`), 11, Naming{}, "client"); err == nil {
 		t.Error("expectedFiles above the limit accepted")
 	}
 }
@@ -199,8 +199,8 @@ func TestStorageLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = m.Close() }()
-	a, _, _ := m.Create([]byte(`{}`), 1)
-	b, _, _ := m.Create([]byte(`{}`), 1)
+	a, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
+	b, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	if _, err := m.AddFile(a.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestStorageLimit(t *testing.T) {
 	if _, err := m.AddFile(b.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 		t.Fatal(err)
 	}
-	c, _, _ := m.Create([]byte(`{}`), 1)
+	c, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	lim.MaxStoredBytes = 1050
 	m.lim = lim
 	// ... but not with a lower limit.
@@ -225,7 +225,7 @@ func TestStorageLimit(t *testing.T) {
 func TestConcurrencyLimit(t *testing.T) {
 	m, _, _ := newManager(t)
 	for range 2 {
-		j, _, _ := m.Create([]byte(`{}`), 1)
+		j, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 		if _, err := m.AddFile(j.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 			t.Fatal(err)
 		}
@@ -247,7 +247,7 @@ func TestConcurrencyLimit(t *testing.T) {
 
 func TestLeaseTimeoutAndExpiry(t *testing.T) {
 	m, c, dir := newManager(t)
-	j, _, _ := m.Create([]byte(`{}`), 1)
+	j, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	if _, err := m.AddFile(j.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestLeaseTimeoutAndExpiry(t *testing.T) {
 		t.Errorf("late result: err = %v", err)
 	}
 
-	j2, _, _ := m.Create([]byte(`{}`), 1)
+	j2, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	if _, err := m.AddFile(j2.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestLeaseTimeoutAndExpiry(t *testing.T) {
 
 func TestDeleteDiscardsRunningResult(t *testing.T) {
 	m, _, dir := newManager(t)
-	j, _, _ := m.Create([]byte(`{}`), 1)
+	j, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 	if _, err := m.AddFile(j.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestInvalidWorkerResult(t *testing.T) {
 		{"short body", okResponse(10), "x"},
 		{"bad format", jobproto.Response{Output: &jobproto.ImageInfo{Format: "exe", Width: 1, Height: 1, Pages: 1}, OutputBytes: 1}, "x"},
 	} {
-		j, _, _ := m.Create([]byte(`{}`), 1)
+		j, _, _ := m.Create([]byte(`{}`), 1, Naming{}, "client")
 		if _, err := m.AddFile(j.ID, "x", bytes.NewReader(pngHeader)); err != nil {
 			t.Fatal(err)
 		}

@@ -25,3 +25,4 @@ Each ADR records one decision with its context and consequences. Status values: 
 | [0019](0019-job-access-and-upload-flow.md) | Job access tokens and upload flow | Accepted |
 | [0020](0020-text-watermark-rendering.md) | Text watermarks rendered in Go with the bundled Go fonts | Accepted |
 | [0021](0021-bmp-and-pdf-in-go.md) | BMP and PDF handled in Go; no PDF library | Accepted |
+| [0022](0022-batch-mode.md) | Batch mode: archives in the sandbox, fair queue, naming, presets | Accepted |

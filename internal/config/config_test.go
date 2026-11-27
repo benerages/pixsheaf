@@ -20,7 +20,8 @@ func TestDefaults(t *testing.T) {
 		c.LogLevel != slog.LevelInfo || c.JobMemoryMB != 384 || c.MaxJobMB != 250 || c.MaxOutputMB != 100 ||
 		c.MaxInputPixels != 50_000_000 || c.MaxOutputPixels != 50_000_000 || c.MaxFrames != 300 ||
 		c.MaxWatermarkKB != 512 || c.MaxQueue != 100 || c.MaxJobs != 200 || c.JobTTL != 15*time.Minute ||
-		c.TmpDir != "/tmp/pixsheaf" || c.MaxStoreMB != 384 {
+		c.TmpDir != "/tmp/pixsheaf" || c.MaxStoreMB != 384 || c.MaxJobsPerClient != 10 ||
+		c.RequestsPerMinute != 300 || c.MaxArchiveMB != 100 || c.MaxArchiveEntries != 1000 {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
 }
@@ -62,6 +63,7 @@ func TestRejects(t *testing.T) {
 		"too many frames":   "PIXSHEAF_MAX_FRAMES=1001",
 		"ttl too long":      "PIXSHEAF_JOB_TTL=48h",
 		"relative tmp dir":  "PIXSHEAF_TMP_DIR=tmp",
+		"archive too big":   "PIXSHEAF_MAX_ARCHIVE_MB=300",
 	}
 	for name, kv := range cases {
 		t.Run(name, func(t *testing.T) {

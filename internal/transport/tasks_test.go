@@ -18,7 +18,7 @@ func serveTasks(t *testing.T) (*jobs.Manager, *http.Client) {
 	t.Helper()
 	m, err := jobs.New(t.TempDir(), jobs.Limits{
 		MaxUploadBytes: 1 << 20, MaxJobBytes: 1 << 20, MaxFiles: 1, MaxOutputBytes: 1 << 20,
-		MaxConcurrency: 1, MaxQueued: 4, MaxJobs: 4, MaxStoredBytes: 1 << 30,
+		MaxConcurrency: 1, MaxQueued: 4, MaxJobs: 4, MaxJobsPerClient: 4, MaxStoredBytes: 1 << 30,
 		TTL: time.Minute, LeaseTimeout: time.Minute,
 	})
 	if err != nil {
@@ -40,7 +40,7 @@ func serveTasks(t *testing.T) (*jobs.Manager, *http.Client) {
 
 func TestClaimAndReport(t *testing.T) {
 	m, c := serveTasks(t)
-	j, _, err := m.Create([]byte(`{"version":1,"steps":[]}`), 1)
+	j, _, err := m.Create([]byte(`{"version":1,"steps":[]}`), 1, jobs.Naming{}, "client")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestClaimAndReport(t *testing.T) {
 
 func TestClaimRefusesLargeInput(t *testing.T) {
 	m, c := serveTasks(t)
-	j, _, _ := m.Create([]byte(`{}`), 1)
+	j, _, _ := m.Create([]byte(`{}`), 1, jobs.Naming{}, "client")
 	if _, err := m.AddFile(j.ID, "a.png", bytes.NewReader(pngHeader)); err != nil {
 		t.Fatal(err)
 	}

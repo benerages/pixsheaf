@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"slices"
 	"sync"
 	"time"
@@ -27,20 +28,20 @@ import (
 
 // Errors returned by Manager. The HTTP layer maps them to problem codes.
 var (
-	ErrNotFound         = errors.New("jobs: not found")
-	ErrUnauthorized     = errors.New("jobs: wrong or missing job token")
-	ErrNotOpen          = errors.New("jobs: the job accepts no more uploads")
-	ErrTooLarge         = errors.New("jobs: file too large")
-	ErrJobTooLarge      = errors.New("jobs: job too large")
-	ErrUnsupported      = errors.New("jobs: not an allowed image format")
-	ErrBusy             = errors.New("jobs: the queue is full")
-	ErrNotReady         = errors.New("jobs: the job is not done")
-	ErrNoResult         = errors.New("jobs: the job has no result")
-	ErrUnknownTask      = errors.New("jobs: unknown or expired task")
-	ErrInvalidResult    = errors.New("jobs: invalid result from worker")
-	ErrTooManyJobs      = errors.New("jobs: too many open jobs")
-	ErrShuttingDown     = errors.New("jobs: shutting down")
-	ErrBatchUnavailable = errors.New("jobs: jobs with more than one file are not available yet")
+	ErrNotFound      = errors.New("jobs: not found")
+	ErrUnauthorized  = errors.New("jobs: wrong or missing job token")
+	ErrNotOpen       = errors.New("jobs: the job accepts no more uploads")
+	ErrTooLarge      = errors.New("jobs: file too large")
+	ErrJobTooLarge   = errors.New("jobs: job too large")
+	ErrUnsupported   = errors.New("jobs: not an allowed image format")
+	ErrBusy          = errors.New("jobs: the queue is full")
+	ErrNotReady      = errors.New("jobs: the job is not done")
+	ErrNoResult      = errors.New("jobs: the job has no result")
+	ErrUnknownTask   = errors.New("jobs: unknown or expired task")
+	ErrInvalidResult = errors.New("jobs: invalid result from worker")
+	ErrTooManyJobs   = errors.New("jobs: too many open jobs")
+	ErrShuttingDown  = errors.New("jobs: shutting down")
+	ErrClientJobs    = errors.New("jobs: too many open jobs for this client")
 )
 
 // Limits are the operator limits enforced by the Manager.
@@ -60,6 +61,11 @@ type Limits struct {
 	MaxQueued int
 	// MaxJobs bounds the jobs kept in memory.
 	MaxJobs int
+	// MaxJobsPerClient bounds the open jobs of one client.
+	MaxJobsPerClient int
+	// MaxArchiveBytes and MaxArchiveEntries bound one ZIP upload.
+	MaxArchiveBytes   int64
+	MaxArchiveEntries int
 	// MaxStoredBytes bounds all stored uploads and results together. It
 	// must stay below the size of the tmpfs, so that a full disk shows up
 	// as ErrBusy (503 with Retry-After) instead of a failed upload.
@@ -93,11 +99,13 @@ type Manager struct {
 	lim  Limits
 	now  func() time.Time
 
-	mu       sync.Mutex
-	jobs     map[string]*job
-	queue    []*file
-	leases   map[string]*lease
-	inFlight int
+	mu    sync.Mutex
+	jobs  map[string]*job
+	queue *fairQueue
+	// clientJobs counts the open jobs per client.
+	clientJobs map[string]int
+	leases     map[string]*lease
+	inFlight   int
 	// stored counts the bytes of all blobs; reserved the upper bound of
 	// uploads in progress.
 	stored   int64
@@ -111,6 +119,8 @@ type job struct {
 	tokenHash   [sha256.Size]byte
 	pipeline    json.RawMessage
 	expected    int
+	naming      Naming
+	client      string
 	created     time.Time
 	expires     time.Time
 	files       []*file
@@ -124,7 +134,7 @@ type file struct {
 	job      *job
 	id       string
 	index    int
-	name     string // uploaded name, for OutputName only
+	name     string // uploaded name, for naming only; never logged
 	status   string
 	input    string // blob name in Manager.root
 	inBytes  int64
@@ -156,12 +166,14 @@ func New(dir string, lim Limits) (*Manager, error) {
 		return nil, err
 	}
 	return &Manager{
-		root:   root,
-		lim:    lim,
-		now:    time.Now,
-		jobs:   map[string]*job{},
-		leases: map[string]*lease{},
-		wake:   make(chan struct{}),
+		root:       root,
+		lim:        lim,
+		now:        time.Now,
+		jobs:       map[string]*job{},
+		leases:     map[string]*lease{},
+		queue:      newFairQueue(),
+		clientJobs: map[string]int{},
+		wake:       make(chan struct{}),
 	}, nil
 }
 
@@ -174,14 +186,18 @@ func (m *Manager) signal() {
 	m.wake = make(chan struct{})
 }
 
-// Create registers a job for an already validated pipeline and returns it
-// with its token. The token is not stored, only its hash.
-func (m *Manager) Create(pipeline json.RawMessage, expected int) (Job, string, error) {
+// Create registers a job for an already validated pipeline and naming and
+// returns it with its token. The token is not stored, only its hash.
+// client is the opaque client key (ADR 0022).
+func (m *Manager) Create(pipeline json.RawMessage, expected int, naming Naming, client string) (Job, string, error) {
 	if expected < 1 || expected > m.lim.MaxFiles {
 		return Job{}, "", fmt.Errorf("%w: expectedFiles must be between 1 and %d", ErrJobTooLarge, m.lim.MaxFiles)
 	}
-	if expected > 1 {
-		return Job{}, "", ErrBatchUnavailable
+	if naming.Pattern == "" {
+		naming.Pattern = "{name}"
+	}
+	if err := ValidatePattern(naming.Pattern); err != nil {
+		return Job{}, "", err
 	}
 	id, token := newID(), newToken()
 	now := m.now()
@@ -190,6 +206,8 @@ func (m *Manager) Create(pipeline json.RawMessage, expected int) (Job, string, e
 		tokenHash: sha256.Sum256([]byte(token)),
 		pipeline:  slices.Clone(pipeline),
 		expected:  expected,
+		naming:    naming,
+		client:    client,
 		created:   now,
 		expires:   now.Add(m.lim.TTL),
 	}
@@ -201,7 +219,11 @@ func (m *Manager) Create(pipeline json.RawMessage, expected int) (Job, string, e
 	if len(m.jobs) >= m.lim.MaxJobs {
 		return Job{}, "", ErrTooManyJobs
 	}
+	if m.clientJobs[client] >= m.lim.MaxJobsPerClient {
+		return Job{}, "", ErrClientJobs
+	}
 	m.jobs[id] = j
+	m.clientJobs[client]++
 	return j.snapshot(), token, nil
 }
 
@@ -245,7 +267,7 @@ func (m *Manager) AddFile(id, uploadedName string, r io.Reader) (File, error) {
 	case j.canceled || len(j.files)+j.pending >= j.expected:
 		m.mu.Unlock()
 		return File{}, ErrNotOpen
-	case len(m.queue) >= m.lim.MaxQueued,
+	case m.queue.len() >= m.lim.MaxQueued,
 		m.stored+m.reserved+m.lim.MaxUploadBytes > m.lim.MaxStoredBytes:
 		m.mu.Unlock()
 		return File{}, ErrBusy
@@ -278,7 +300,7 @@ func (m *Manager) AddFile(id, uploadedName string, r io.Reader) (File, error) {
 	j.bytes += n
 	m.stored += n
 	j.files = append(j.files, f)
-	m.queue = append(m.queue, f)
+	m.queue.push(f)
 	m.signal()
 	return f.snapshot(), nil
 }
@@ -337,9 +359,8 @@ func (m *Manager) Claim(ctx context.Context) (Task, error) {
 			m.mu.Unlock()
 			return Task{}, ErrShuttingDown
 		}
-		if len(m.queue) > 0 && m.inFlight < m.lim.MaxConcurrency {
-			f := m.queue[0]
-			m.queue = m.queue[1:]
+		if m.queue.len() > 0 && m.inFlight < m.lim.MaxConcurrency {
+			f := m.queue.pop()
 			in, err := m.root.Open(f.input)
 			if err != nil {
 				m.failLocked(f, jobproto.CodeInternal, "the upload could not be read")
@@ -474,17 +495,52 @@ func (m *Manager) removeOutput(f *file) {
 	}
 }
 
-// Download is the result of a finished single-file job.
+// Download is the result of a done job: one file for a job created with
+// one expected image upload, otherwise the entries of a ZIP archive.
 type Download struct {
+	// Single result.
 	File        *os.File
 	Size        int64
 	Name        string
 	ContentType string
+
+	// Archive: the processed files with their paths inside the archive,
+	// and every file of the job for the report.
+	Entries []ZipEntry
+	Files   []File
+	JobID   string
+	Created time.Time
+
+	release func()
 }
 
-// TakeDownload hands out the result of a done job once and deletes the job
-// from the Manager; the caller streams Download.File and must call Release
-// afterwards, which deletes the result.
+// ZipEntry is one result inside a ZIP download.
+type ZipEntry struct {
+	Path  string
+	Index int
+	Size  int64
+	blob  string
+}
+
+// IsArchive reports whether the download is a ZIP archive.
+func (d Download) IsArchive() bool { return d.File == nil }
+
+// Release deletes the results of the download. It must be called once the
+// download has been sent (or has failed).
+func (d Download) Release() {
+	if d.release != nil {
+		d.release()
+	}
+}
+
+// OpenEntry opens a result of an archive download for reading.
+func (m *Manager) OpenEntry(e ZipEntry) (*os.File, error) {
+	return m.root.Open(e.blob)
+}
+
+// TakeDownload hands out the result of a done job once. The job is
+// removed at once, so a second request gets ErrNotFound; its results stay
+// on disk until Release.
 func (m *Manager) TakeDownload(id string) (Download, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -495,23 +551,57 @@ func (m *Manager) TakeDownload(id string) (Download, error) {
 	if j.status() != JobDone {
 		return Download{}, ErrNotReady
 	}
-	f := j.files[0]
-	if f.status != FileDone {
-		return Download{}, ErrNoResult
+
+	if j.expected == 1 && len(j.files) == 1 {
+		f := j.files[0]
+		if f.status != FileDone {
+			return Download{}, ErrNoResult
+		}
+		out, err := m.root.Open(f.output)
+		if err != nil {
+			return Download{}, err
+		}
+		name := f.outputName(uniqueNames{})
+		j.downloading = true
+		m.deleteLocked(j)
+		// The open descriptor keeps the data readable after the unlink.
+		return Download{
+			File: out, Size: f.outBytes, Name: path.Base(name),
+			ContentType: ContentType(f.out.Format),
+		}, nil
 	}
-	out, err := m.root.Open(f.output)
-	if err != nil {
-		return Download{}, err
+
+	d := Download{JobID: j.id, Created: j.created, Files: make([]File, 0, len(j.files))}
+	names := uniqueNames{}
+	var blobs []*file
+	for _, f := range j.files {
+		if f.status == FileDone && f.output != "" {
+			d.Entries = append(d.Entries, ZipEntry{Path: f.outputName(names), Index: f.index, Size: f.outBytes, blob: f.output})
+			blobs = append(blobs, f)
+		}
+	}
+	for _, f := range j.files {
+		d.Files = append(d.Files, f.snapshot())
+	}
+	for i, e := range d.Entries {
+		d.Files[e.Index].OutputName = d.Entries[i].Path
 	}
 	j.downloading = true
+	// Detach the results so that deleting the job keeps them until Release.
+	for _, f := range blobs {
+		f.output = ""
+	}
 	m.deleteLocked(j)
-	// The open descriptor keeps the data readable after the unlink.
-	return Download{
-		File:        out,
-		Size:        f.outBytes,
-		Name:        OutputName(f.name, f.out.Format),
-		ContentType: ContentType(f.out.Format),
-	}, nil
+	entries := d.Entries
+	d.release = func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for _, e := range entries {
+			_ = m.root.Remove(e.blob)
+			m.stored -= e.Size
+		}
+	}
+	return d, nil
 }
 
 // Delete cancels a job and removes all of its data.
@@ -531,7 +621,10 @@ func (m *Manager) Delete(id string) error {
 func (m *Manager) deleteLocked(j *job) {
 	j.canceled = true
 	delete(m.jobs, j.id)
-	m.queue = slices.DeleteFunc(m.queue, func(f *file) bool { return f.job == j })
+	m.queue.remove(func(f *file) bool { return f.job == j })
+	if m.clientJobs[j.client]--; m.clientJobs[j.client] <= 0 {
+		delete(m.clientJobs, j.client)
+	}
 	for _, f := range j.files {
 		m.removeInput(f)
 		m.removeOutput(f)
@@ -563,7 +656,7 @@ func (m *Manager) CancelFile(jobID, fileID string) error {
 	if err != nil {
 		return err
 	}
-	m.queue = slices.DeleteFunc(m.queue, func(q *file) bool { return q == f })
+	m.queue.remove(func(q *file) bool { return q == f })
 	m.removeInput(f)
 	m.removeOutput(f)
 	if f.status != FileFailed {

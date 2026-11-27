@@ -30,8 +30,10 @@ type File struct {
 	Output      *jobproto.ImageInfo
 	OutputBytes int64
 	OutputName  string
-	ErrorCode   string
-	ErrorMsg    string
+	// Source is the sanitized upload name with its folder path.
+	Source    string
+	ErrorCode string
+	ErrorMsg  string
 }
 
 // status derives the job status from its files.
@@ -70,9 +72,25 @@ func (f *file) snapshot() File {
 	}
 	if f.out != nil {
 		out := *f.out
-		s.Output, s.OutputBytes, s.OutputName = &out, f.outBytes, OutputName(f.name, out.Format)
+		s.Output, s.OutputBytes, s.OutputName = &out, f.outBytes, f.outputName(uniqueNames{})
 	}
+	s.Source = SourceName(f.name)
 	return s
+}
+
+// outputName applies the job's naming to a processed file and makes the
+// result unique within names. It includes the folder if the job keeps
+// folders.
+func (f *file) outputName(names uniqueNames) string {
+	folder, base := splitUpload(f.name)
+	name := expandPattern(f.job.naming.Pattern, nameVars{
+		name: base, index: f.index + 1, total: len(f.job.files),
+		width: f.out.Width, height: f.out.Height, date: f.job.created, format: f.out.Format,
+	})
+	if f.job.naming.KeepFolders && folder != "" {
+		name = folder + "/" + name
+	}
+	return names.take(name)
 }
 
 // newID returns 128 random bits, base64url without padding.

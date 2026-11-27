@@ -13,6 +13,10 @@ Both run as UID 10001 with a read-only root filesystem, no Linux capabilities, `
 
 The API binds to the loopback interface of the host. Put a TLS-terminating reverse proxy in front of it and set `PIXSHEAF_TRUSTED_PROXIES` to the proxy's address so client IPs are used for rate limiting. The proxy should send `Strict-Transport-Security`.
 
+Serve Pixsheaf over HTTPS. The job cookie is always `Secure`; browsers send it over plain HTTP only to `localhost` and `127.0.0.1`. Over plain HTTP on another address, event streams and download links that rely on the cookie do not work.
+
+Per-client limits (open jobs, requests per minute) and the fair queue tell clients apart by IP address (ADR 0022). The API sees the address of the connection's peer. With the default port mapping (`127.0.0.1:8080:8080`), a proxy on the host reaches the API through Docker's bridge, so the peer is the bridge gateway (for example `172.18.0.1`), not `127.0.0.1`. Add the network the proxy connects from to `PIXSHEAF_TRUSTED_PROXIES` (for example the `pixsheaf_frontend` subnet shown by `docker network inspect pixsheaf_frontend`). Without it, all clients behind the proxy share one identity and one set of limits. `X-Forwarded-For` is read only from trusted peers, and only its rightmost untrusted entry counts, so clients cannot choose their identity.
+
 Uploads are anonymous by default (ADR 0015). To restrict access, use forward authentication in the proxy. Examples for Traefik, Caddy, and nginx follow with the upload endpoints in Phase 3.
 
 ## Optional: gVisor

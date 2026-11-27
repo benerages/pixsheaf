@@ -38,7 +38,7 @@ func newAPI(t *testing.T, opts Options) *apiEnv {
 	m, err := jobs.New(dir, jobs.Limits{
 		MaxUploadBytes: 1000, MaxJobBytes: 5000, MaxFiles: 10, MaxOutputBytes: 1000,
 		MaxInputPixels: 100, MaxOutputPixels: 100, MaxFrames: 2,
-		MaxConcurrency: 1, MaxQueued: 10, MaxJobs: 10, MaxStoredBytes: 1 << 20,
+		MaxConcurrency: 1, MaxQueued: 10, MaxJobs: 10, MaxJobsPerClient: 5, MaxStoredBytes: 1 << 20,
 		TTL: time.Minute, LeaseTimeout: time.Minute,
 	})
 	if err != nil {
@@ -292,7 +292,8 @@ func TestCreateRejected(t *testing.T) {
 	expect(t, post("application/json", `{"pipeline":{},"expectedFiles":1,"x":1}`), http.StatusBadRequest, codeInvalidJSON)
 	expect(t, post("application/json", `{"expectedFiles":1}`), http.StatusUnprocessableEntity, codePipelineInvalid)
 	expect(t, post("application/json", `{"pipeline":`+emptyPipeline+`,"expectedFiles":0}`), http.StatusUnprocessableEntity, codeRequestInvalid)
-	expect(t, post("application/json", `{"pipeline":`+emptyPipeline+`,"expectedFiles":2}`), http.StatusUnprocessableEntity, codeBatchUnavailable)
+	expect(t, post("application/json", `{"pipeline":`+emptyPipeline+`,"expectedFiles":1,"naming":{"pattern":"{nope}"}}`), http.StatusUnprocessableEntity, codePipelineInvalid)
+	expect(t, post("application/json", `{"pipeline":`+emptyPipeline+`,"expectedFiles":1,"naming":{"x":1}}`), http.StatusBadRequest, codeInvalidJSON)
 	expect(t, post("application/json", strings.Repeat(" ", maxCreateBytes+1)), http.StatusRequestEntityTooLarge, codeBodyTooLarge)
 
 	resp := post("application/json", `{"pipeline":{"version":2,"steps":[]},"expectedFiles":1}`)

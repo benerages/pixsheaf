@@ -24,6 +24,10 @@ Unknown `PIXSHEAF_*` variables are rejected at startup, so a typo cannot silentl
 | `PIXSHEAF_JOB_TTL` | `15m` | Go duration, 1m–24h | Lifetime of a job that is not downloaded; then it and its files are deleted. |
 | `PIXSHEAF_TMP_DIR` | `/tmp/pixsheaf` | absolute path | Directory for uploads and results. Must be on a tmpfs; the API empties it on start and on shutdown. |
 | `PIXSHEAF_MAX_STORE_MB` | `384` | 1–1048576 | All uploads and results together. Keep it below the size of the API's `/tmp` tmpfs (512 MB in `compose.yaml`); when it is reached, uploads get `503`. |
+| `PIXSHEAF_MAX_JOBS_PER_CLIENT` | `10` | 1–100000 | Jobs one client may have open at the same time; beyond that `POST /jobs` answers `429`. Clients are told apart by IP address (ADR 0022). |
+| `PIXSHEAF_REQUESTS_PER_MINUTE` | `300` | 10–100000 | API requests per client and minute, with a burst of the same size; beyond that `429` with `Retry-After`. Health check and UI files are not counted. |
+| `PIXSHEAF_MAX_ARCHIVE_MB` | `100` | 1–32768, at most half of `PIXSHEAF_JOB_MEMORY_MB` | Size of one uploaded ZIP archive. The archive is unpacked in a job process that holds it in memory. |
+| `PIXSHEAF_MAX_ARCHIVE_ENTRIES` | `1000` | 1–100000 | Entries (files and folders) in one ZIP archive. |
 | `PIXSHEAF_TRUSTED_PROXIES` | empty | comma-separated CIDR prefixes | Reverse proxies whose `X-Forwarded-For` header is trusted. Empty: the header is ignored. |
 | `PIXSHEAF_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` | Minimum log level. Logs never contain file contents, original file names, or plaintext IP addresses. |
 

@@ -57,6 +57,13 @@ type Config struct {
 	// MaxStoreMB bounds all uploads and results stored in TmpDir; keep it
 	// below the size of the tmpfs.
 	MaxStoreMB int
+	// MaxJobsPerClient bounds the open jobs of one client (ADR 0022).
+	MaxJobsPerClient int
+	// RequestsPerMinute limits API requests per client.
+	RequestsPerMinute int
+	// MaxArchiveMB and MaxArchiveEntries bound one uploaded ZIP archive.
+	MaxArchiveMB      int
+	MaxArchiveEntries int
 	// TrustedProxies lists the networks whose X-Forwarded-For is honored.
 	TrustedProxies []netip.Prefix
 	// LogLevel is the minimum log level.
@@ -106,11 +113,15 @@ var settings = map[string]setting{
 	"MAX_OUTPUT_PIXELS": {"50000000", intIn(1, 1_000_000_000, func(c *Config, n int) {
 		c.MaxOutputPixels = int64(n)
 	})},
-	"MAX_FRAMES":       {"300", intIn(1, 1000, func(c *Config, n int) { c.MaxFrames = n })},
-	"MAX_WATERMARK_KB": {"512", intIn(0, 1024, func(c *Config, n int) { c.MaxWatermarkKB = n })},
-	"MAX_QUEUE":        {"100", intIn(1, 100000, func(c *Config, n int) { c.MaxQueue = n })},
-	"MAX_STORE_MB":     {"384", intIn(1, 1<<20, func(c *Config, n int) { c.MaxStoreMB = n })},
-	"MAX_JOBS":         {"200", intIn(1, 100000, func(c *Config, n int) { c.MaxJobs = n })},
+	"MAX_FRAMES":          {"300", intIn(1, 1000, func(c *Config, n int) { c.MaxFrames = n })},
+	"MAX_WATERMARK_KB":    {"512", intIn(0, 1024, func(c *Config, n int) { c.MaxWatermarkKB = n })},
+	"MAX_QUEUE":           {"100", intIn(1, 100000, func(c *Config, n int) { c.MaxQueue = n })},
+	"MAX_STORE_MB":        {"384", intIn(1, 1<<20, func(c *Config, n int) { c.MaxStoreMB = n })},
+	"MAX_JOBS_PER_CLIENT": {"10", intIn(1, 100000, func(c *Config, n int) { c.MaxJobsPerClient = n })},
+	"REQUESTS_PER_MINUTE": {"300", intIn(10, 100000, func(c *Config, n int) { c.RequestsPerMinute = n })},
+	"MAX_ARCHIVE_MB":      {"100", intIn(1, 32768, func(c *Config, n int) { c.MaxArchiveMB = n })},
+	"MAX_ARCHIVE_ENTRIES": {"1000", intIn(1, 100000, func(c *Config, n int) { c.MaxArchiveEntries = n })},
+	"MAX_JOBS":            {"200", intIn(1, 100000, func(c *Config, n int) { c.MaxJobs = n })},
 	"JOB_TTL": {"15m", func(c *Config, v string) error {
 		d, err := time.ParseDuration(v)
 		if err != nil {
@@ -185,6 +196,11 @@ func Load(environ []string) (Config, error) {
 		if err := s.apply(&c, v); err != nil {
 			return Config{}, fmt.Errorf("%s%s=%q: %w", Prefix, name, v, err)
 		}
+	}
+	// The job process holds an archive in memory while it unpacks it
+	// (ADR 0022), next to one entry and the Go runtime.
+	if 2*c.MaxArchiveMB > c.JobMemoryMB {
+		return Config{}, fmt.Errorf("%sMAX_ARCHIVE_MB=%d must be at most half of %sJOB_MEMORY_MB=%d", Prefix, c.MaxArchiveMB, Prefix, c.JobMemoryMB)
 	}
 	return c, nil
 }

@@ -80,22 +80,29 @@ func (e CropStepOp) Valid() bool {
 
 // Defines values for FileErrorCode.
 const (
-	DecodeFailed          FileErrorCode = "decode_failed"
-	EncodeFailed          FileErrorCode = "encode_failed"
-	FormatDisabled        FileErrorCode = "format_disabled"
-	Internal              FileErrorCode = "internal"
-	StepNotApplicable     FileErrorCode = "step_not_applicable"
-	TargetSizeUnreachable FileErrorCode = "target_size_unreachable"
-	Timeout               FileErrorCode = "timeout"
-	TooLarge              FileErrorCode = "too_large"
-	TooManyFrames         FileErrorCode = "too_many_frames"
-	TooManyPixels         FileErrorCode = "too_many_pixels"
-	UnsupportedFormat     FileErrorCode = "unsupported_format"
+	ArchiveEntryUnsupported FileErrorCode = "archive_entry_unsupported"
+	ArchiveInvalid          FileErrorCode = "archive_invalid"
+	DecodeFailed            FileErrorCode = "decode_failed"
+	EncodeFailed            FileErrorCode = "encode_failed"
+	FormatDisabled          FileErrorCode = "format_disabled"
+	Internal                FileErrorCode = "internal"
+	StepNotApplicable       FileErrorCode = "step_not_applicable"
+	TargetSizeUnreachable   FileErrorCode = "target_size_unreachable"
+	Timeout                 FileErrorCode = "timeout"
+	TooLarge                FileErrorCode = "too_large"
+	TooManyFiles            FileErrorCode = "too_many_files"
+	TooManyFrames           FileErrorCode = "too_many_frames"
+	TooManyPixels           FileErrorCode = "too_many_pixels"
+	UnsupportedFormat       FileErrorCode = "unsupported_format"
 )
 
 // Valid indicates whether the value is a known member of the FileErrorCode enum.
 func (e FileErrorCode) Valid() bool {
 	switch e {
+	case ArchiveEntryUnsupported:
+		return true
+	case ArchiveInvalid:
+		return true
 	case DecodeFailed:
 		return true
 	case EncodeFailed:
@@ -111,6 +118,8 @@ func (e FileErrorCode) Valid() bool {
 	case Timeout:
 		return true
 	case TooLarge:
+		return true
+	case TooManyFiles:
 		return true
 	case TooManyFrames:
 		return true
@@ -239,6 +248,7 @@ const (
 	InputFormatPng  InputFormat = "png"
 	InputFormatTiff InputFormat = "tiff"
 	InputFormatWebp InputFormat = "webp"
+	InputFormatZip  InputFormat = "zip"
 )
 
 // Valid indicates whether the value is a known member of the InputFormat enum.
@@ -261,6 +271,26 @@ func (e InputFormat) Valid() bool {
 	case InputFormatTiff:
 		return true
 	case InputFormatWebp:
+		return true
+	case InputFormatZip:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobFileKind.
+const (
+	Archive JobFileKind = "archive"
+	Image   JobFileKind = "image"
+)
+
+// Valid indicates whether the value is a known member of the JobFileKind enum.
+func (e JobFileKind) Valid() bool {
+	switch e {
+	case Archive:
+		return true
+	case Image:
 		return true
 	default:
 		return false
@@ -357,6 +387,21 @@ const (
 func (e PipelineVersion) Valid() bool {
 	switch e {
 	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PresetFormat.
+const (
+	PixsheafPreset PresetFormat = "pixsheaf-preset"
+)
+
+// Valid indicates whether the value is a known member of the PresetFormat enum.
+func (e PresetFormat) Valid() bool {
+	switch e {
+	case PixsheafPreset:
 		return true
 	default:
 		return false
@@ -559,7 +604,7 @@ type FileError struct {
 	// Code Stable machine-readable reason.
 	Code FileErrorCode `json:"code"`
 
-	// Message Human-readable explanation (English). Never contains file contents or paths.
+	// Message Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`.
 	Message string `json:"message"`
 }
 
@@ -571,7 +616,7 @@ type FileStatus string
 
 // FileUpload defines model for FileUpload.
 type FileUpload struct {
-	// File The image.
+	// File The image or ZIP archive.
 	File openapi_types.File `json:"file"`
 }
 
@@ -602,7 +647,7 @@ type Id = string
 type ImageInfo struct {
 	Bytes int `json:"bytes"`
 
-	// Format Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels.
+	// Format Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels. `zip` is accepted as an upload container only (ADR 0022).
 	Format InputFormat `json:"format"`
 	Height *int        `json:"height,omitempty"`
 
@@ -611,7 +656,7 @@ type ImageInfo struct {
 	Width *int `json:"width,omitempty"`
 }
 
-// InputFormat Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels.
+// InputFormat Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels. `zip` is accepted as an upload container only (ADR 0022).
 type InputFormat string
 
 // Job defines model for Job.
@@ -641,6 +686,9 @@ type JobCreate struct {
 	// ExpectedFiles Number of files that will be uploaded. The job stops accepting uploads after this many files. With 1, the download is the image itself; with more, it is a ZIP archive.
 	ExpectedFiles int `json:"expectedFiles"`
 
+	// Naming How output files are named. The pattern builds the name without its extension; the extension of the output format is always appended. Placeholders: `{name}` (uploaded name without folder and extension), `{index}` (upload position starting at 1, zero-padded to the number of files), `{width}`, `{height}` (output size), `{date}` (job creation date, UTC, `YYYY-MM-DD`), `{ext}` (output extension). Any other text is kept literally, except characters that are not allowed in names (they become `_`); `{` and `}` outside a known placeholder are rejected. Duplicate names get a suffix such as ` (2)`.
+	Naming *Naming `json:"naming,omitempty"`
+
 	// Pipeline Declarative processing pipeline (ADR 0009). The same document is used
 	// by presets, the UI, and the API, and the server validates it on every
 	// request.
@@ -665,21 +713,32 @@ type JobCreated struct {
 
 // JobFile defines model for JobFile.
 type JobFile struct {
-	Error *FileError `json:"error,omitempty"`
+	// ArchiveId The archive this image came from.
+	ArchiveId *Id        `json:"archiveId,omitempty"`
+	Error     *FileError `json:"error,omitempty"`
 
 	// Id Random identifier with 128 bits of entropy (base64url, no padding).
 	Id Id `json:"id"`
 
-	// Index Zero-based upload position within the job.
+	// Index Zero-based position within the job.
 	Index int `json:"index"`
 
 	// Input Facts about an uploaded image. Width and height are known once the header was read.
 	Input *ImageInfo `json:"input,omitempty"`
 
+	// Kind `image` for an image; `archive` for an uploaded ZIP archive, which is done once it has been unpacked into image files.
+	Kind JobFileKind `json:"kind"`
+
 	// Output Facts about the processed image.
 	Output *OutputInfo `json:"output,omitempty"`
-	Status FileStatus  `json:"status"`
+
+	// Source Sanitized name of the upload or archive entry, with its folder.
+	Source *string    `json:"source,omitempty"`
+	Status FileStatus `json:"status"`
 }
+
+// JobFileKind `image` for an image; `archive` for an uploaded ZIP archive, which is done once it has been unpacked into image files.
+type JobFileKind string
 
 // JobStatus - `open`: waiting for uploads; uploaded files are already processed.
 //   - `processing`: all files uploaded, some still in progress.
@@ -690,19 +749,44 @@ type JobStatus string
 
 // Limits Limits configured by the operator; always at or below the schema maximums.
 type Limits struct {
+	// MaxArchiveBytes Size of one uploaded ZIP archive.
+	MaxArchiveBytes int `json:"maxArchiveBytes"`
+
+	// MaxArchiveEntries Entries (files and folders) in one ZIP archive.
+	MaxArchiveEntries int `json:"maxArchiveEntries"`
 	MaxFilesPerJob    int `json:"maxFilesPerJob"`
-	MaxInputPixels    int `json:"maxInputPixels"`
-	MaxJobBytes       int `json:"maxJobBytes"`
-	MaxOutputPixels   int `json:"maxOutputPixels"`
-	MaxSteps          int `json:"maxSteps"`
-	MaxUploadBytes    int `json:"maxUploadBytes"`
+
+	// MaxFrames Frames of an animated GIF or WebP.
+	MaxFrames      int `json:"maxFrames"`
+	MaxInputPixels int `json:"maxInputPixels"`
+	MaxJobBytes    int `json:"maxJobBytes"`
+
+	// MaxJobsPerClient Jobs one client may have open at the same time.
+	MaxJobsPerClient int `json:"maxJobsPerClient"`
+	MaxOutputPixels  int `json:"maxOutputPixels"`
+	MaxSteps         int `json:"maxSteps"`
+	MaxUploadBytes   int `json:"maxUploadBytes"`
+
+	// MaxWatermarkBytes 0 means that image watermarks are disabled.
 	MaxWatermarkBytes int `json:"maxWatermarkBytes"`
+
+	// RequestsPerMinute API requests per client and minute (with a burst of the same size).
+	RequestsPerMinute int `json:"requestsPerMinute"`
 }
 
 // MetadataPolicy Metadata (EXIF, GPS, XMP, IPTC) is removed by default. `keep: true` copies it to the output where the format supports it; GPS data is removed unless `keepLocation` is also true.
 type MetadataPolicy struct {
 	Keep         *bool `json:"keep,omitempty"`
 	KeepLocation *bool `json:"keepLocation,omitempty"`
+}
+
+// Naming How output files are named. The pattern builds the name without its extension; the extension of the output format is always appended. Placeholders: `{name}` (uploaded name without folder and extension), `{index}` (upload position starting at 1, zero-padded to the number of files), `{width}`, `{height}` (output size), `{date}` (job creation date, UTC, `YYYY-MM-DD`), `{ext}` (output extension). Any other text is kept literally, except characters that are not allowed in names (they become `_`); `{` and `}` outside a known placeholder are rejected. Duplicate names get a suffix such as ` (2)`.
+type Naming struct {
+	// KeepFolders Keep the folder structure of folder uploads and ZIP archives in the ZIP download.
+	KeepFolders *bool `json:"keepFolders,omitempty"`
+
+	// Pattern Examples: {name}, {index}_{name}_{width}x{height}, photo-{date}-{index}
+	Pattern *string `json:"pattern,omitempty"`
 }
 
 // OutputFormat Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`. Animated GIF and WebP input stays animated when the output is `gif` or `webp` (every step runs on every frame; frame delays and the loop count are kept, and content-aware crop gravities fall back to `center` so that the frames stay aligned). Other output formats get the first frame. Animations with more frames than the limit fail with `too_many_frames`.
@@ -751,6 +835,37 @@ type PipelineColorSpace string
 // PipelineVersion Pipeline format version.
 type PipelineVersion int
 
+// Preset A named pipeline for import, export, and the bundled presets. The same document is accepted by `POST /jobs` (as `pipeline` and `naming`).
+type Preset struct {
+	Description *string `json:"description,omitempty"`
+
+	// Format Marks the document as a Pixsheaf preset.
+	Format PresetFormat `json:"format"`
+
+	// Id Stable identifier; bundled presets use `web`, `thumbnail`, `social`, `archive`.
+	Id string `json:"id"`
+
+	// Naming How output files are named. The pattern builds the name without its extension; the extension of the output format is always appended. Placeholders: `{name}` (uploaded name without folder and extension), `{index}` (upload position starting at 1, zero-padded to the number of files), `{width}`, `{height}` (output size), `{date}` (job creation date, UTC, `YYYY-MM-DD`), `{ext}` (output extension). Any other text is kept literally, except characters that are not allowed in names (they become `_`); `{` and `}` outside a known placeholder are rejected. Duplicate names get a suffix such as ` (2)`.
+	Naming *Naming `json:"naming,omitempty"`
+
+	// Pipeline Declarative processing pipeline (ADR 0009). The same document is used
+	// by presets, the UI, and the API, and the server validates it on every
+	// request.
+	//
+	// Steps run in order; a step with `when` runs only if all of its
+	// conditions hold for the current image. The output format is the
+	// source format unless a `convert` step applies; HEIC/HEIF input
+	// without a `convert` step is saved as JPEG.
+	//
+	// The maximums in this schema are hard limits. The operator's limits
+	// (`GET /capabilities`) may be lower and are enforced as well.
+	Pipeline Pipeline `json:"pipeline"`
+	Title    string   `json:"title"`
+}
+
+// PresetFormat Marks the document as a Pixsheaf preset.
+type PresetFormat string
+
 // Problem Error details (RFC 9457).
 type Problem struct {
 	// Code Stable machine-readable error code, such as `pipeline_invalid` or `rate_limited`.
@@ -772,6 +887,38 @@ type Rect struct {
 	Left   int `json:"left"`
 	Top    int `json:"top"`
 	Width  int `json:"width"`
+}
+
+// Report `report.json` in a ZIP download: one entry per file, in upload order, including failed and canceled files.
+type Report struct {
+	CreatedAt time.Time     `json:"createdAt"`
+	Files     []ReportEntry `json:"files"`
+
+	// JobId Random identifier with 128 bits of entropy (base64url, no padding).
+	JobId Id `json:"jobId"`
+}
+
+// ReportEntry defines model for ReportEntry.
+type ReportEntry struct {
+	Error      *FileError `json:"error,omitempty"`
+	Height     *int       `json:"height,omitempty"`
+	Index      int        `json:"index"`
+	InputBytes int        `json:"inputBytes"`
+
+	// InputFormat Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels. `zip` is accepted as an upload container only (ADR 0022).
+	InputFormat *InputFormat `json:"inputFormat,omitempty"`
+
+	// Output Path of the result inside the ZIP archive.
+	Output      *string `json:"output,omitempty"`
+	OutputBytes *int    `json:"outputBytes,omitempty"`
+
+	// SavedPercent Size reduction against the input; negative if the output is larger.
+	SavedPercent *float32 `json:"savedPercent,omitempty"`
+
+	// Source Sanitized name of the upload or archive entry, with its folder.
+	Source string     `json:"source"`
+	Status FileStatus `json:"status"`
+	Width  *int       `json:"width,omitempty"`
 }
 
 // ResizeParams Exactly one way of giving the size (enforced by the server):

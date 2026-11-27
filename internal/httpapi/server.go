@@ -20,8 +20,19 @@ const (
 // endpoint, and, if opts.Jobs is set, the job API under /api/v1.
 func New(addr string, ui fs.FS, logger *slog.Logger, opts Options) *http.Server {
 	mux := http.NewServeMux()
+	var handler http.Handler = mux
 	if opts.Jobs != nil {
-		(&jobAPI{m: opts.Jobs, opts: opts, logger: logger}).routes(mux)
+		presets, err := loadPresets()
+		if err != nil {
+			// The presets are compiled in; a broken one is a build error.
+			panic(err)
+		}
+		(&jobAPI{m: opts.Jobs, opts: opts, logger: logger, presets: presets}).routes(mux)
+		var limiter *rateLimiter
+		if opts.RequestsPerMinute > 0 {
+			limiter = newRateLimiter(opts.RequestsPerMinute)
+		}
+		handler = limitClients(newClientIdentifier(opts.TrustedProxies), limiter, mux)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -32,7 +43,7 @@ func New(addr string, ui fs.FS, logger *slog.Logger, opts Options) *http.Server 
 
 	return &http.Server{
 		Addr:              addr,
-		Handler:           securityHeaders(mux),
+		Handler:           securityHeaders(handler),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

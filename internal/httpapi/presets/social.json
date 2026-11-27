@@ -1,0 +1,14 @@
+{
+  "format": "pixsheaf-preset",
+  "id": "social",
+  "title": "Social Media",
+  "description": "Fits into 1080 x 1350 pixels (4:5 portrait), JPEG at quality 85, metadata and location removed.",
+  "pipeline": {
+    "version": 1,
+    "steps": [
+      {"op": "autoOrient"},
+      {"op": "resize", "params": {"width": 1080, "height": 1350, "mode": "fit"}},
+      {"op": "convert", "params": {"format": "jpeg", "quality": 85, "progressive": true}}
+    ]
+  }
+}

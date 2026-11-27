@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bundled presets
+         * @description Returns the presets that ship with the server. A preset is a pipeline (and optionally a naming pattern) that a client sends unchanged in `POST /jobs`; the server does not store presets. Custom presets are kept by the client and exchanged as JSON in the same `Preset` format, so the same preset produces the same result in the UI and through the API.
+         */
+        get: operations["listPresets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs": {
         parameters: {
             query?: never;
@@ -77,7 +97,8 @@ export interface paths {
         put?: never;
         /**
          * Upload one file
-         * @description Uploads one image as a multipart form with a single part named `file`. The type is detected from the content (magic bytes); the part's `Content-Type` and file name are not used for that decision (ADR 0014). The original file name is kept in memory only, to build the output name; it is never logged. Processing starts immediately.
+         * @description Uploads one image or one ZIP archive as a multipart form with a single part named `file`. The type is detected from the content (magic bytes); the part's `Content-Type` and file name are not used for that decision (ADR 0014). The file name may contain a relative folder path (folder uploads); it is kept in memory only, to build the output name and the folder structure of the ZIP download, and it is never logged. Processing starts immediately.
+         *     A ZIP archive counts as one upload and becomes a file of kind `archive`. It is unpacked in the worker sandbox (ADR 0022) within `maxArchiveBytes` and `maxArchiveEntries` and the job's file and size limits; each image entry then becomes a file of kind `image` with `archiveId` set. Directories are skipped; symbolic links, encrypted entries, nested archives, and entries that are too large or compressed too strongly become failed files with a reason, so they appear in the report.
          */
         post: operations["uploadFile"];
         delete?: never;
@@ -152,7 +173,7 @@ export interface paths {
         };
         /**
          * Download the result once
-         * @description Returns the processed image when the job has one file, otherwise a ZIP archive (streamed) with every successfully processed file and a `report.json`. Available once the job is `done`. After a complete download the job and its data are deleted; a second request returns 404. Original bytes are never returned; every output is a new encode (ADR 0014). The `pixsheaf_job` cookie is accepted here.
+         * @description Returns the processed image when the job was created with `expectedFiles: 1` and that upload is an image; otherwise a ZIP archive, streamed without buffering, with every successfully processed file and a `report.json` (schema `Report`). Names inside the archive follow the job's `naming`; duplicates get a suffix such as ` (2)`. Available once the job is `done`. After the download the job and its data are deleted; a second request returns 404. Original bytes are never returned; every output is a new encode (ADR 0014). The `pixsheaf_job` cookie is accepted here.
          */
         get: operations["downloadJob"];
         put?: never;
@@ -173,10 +194,10 @@ export interface components {
         Token: string;
         Binary: string;
         /**
-         * @description Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels.
+         * @description Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels. `zip` is accepted as an upload container only (ADR 0022).
          * @enum {string}
          */
-        InputFormat: "jpeg" | "png" | "webp" | "gif" | "tiff" | "bmp" | "avif" | "heif" | "jxl";
+        InputFormat: "jpeg" | "png" | "webp" | "gif" | "tiff" | "bmp" | "avif" | "heif" | "jxl" | "zip";
         /**
          * @description Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`. Animated GIF and WebP input stays animated when the output is `gif` or `webp` (every step runs on every frame; frame delays and the loop count are kept, and content-aware crop gravities fall back to `center` so that the frames stay aligned). Other output formats get the first frame. Animations with more frames than the limit fail with `too_many_frames`.
          * @enum {string}
@@ -197,12 +218,76 @@ export interface components {
             maxInputPixels: number;
             maxOutputPixels: number;
             maxSteps: number;
+            /** @description 0 means that image watermarks are disabled. */
             maxWatermarkBytes: number;
+            /** @description Frames of an animated GIF or WebP. */
+            maxFrames: number;
+            /** @description Size of one uploaded ZIP archive. */
+            maxArchiveBytes: number;
+            /** @description Entries (files and folders) in one ZIP archive. */
+            maxArchiveEntries: number;
+            /** @description Jobs one client may have open at the same time. */
+            maxJobsPerClient: number;
+            /** @description API requests per client and minute (with a burst of the same size). */
+            requestsPerMinute: number;
         };
         JobCreate: {
             pipeline: components["schemas"]["Pipeline"];
             /** @description Number of files that will be uploaded. The job stops accepting uploads after this many files. With 1, the download is the image itself; with more, it is a ZIP archive. */
             expectedFiles: number;
+            naming?: components["schemas"]["Naming"];
+        };
+        /** @description How output files are named. The pattern builds the name without its extension; the extension of the output format is always appended. Placeholders: `{name}` (uploaded name without folder and extension), `{index}` (upload position starting at 1, zero-padded to the number of files), `{width}`, `{height}` (output size), `{date}` (job creation date, UTC, `YYYY-MM-DD`), `{ext}` (output extension). Any other text is kept literally, except characters that are not allowed in names (they become `_`); `{` and `}` outside a known placeholder are rejected. Duplicate names get a suffix such as ` (2)`. */
+        Naming: {
+            /**
+             * @default {name}
+             * @example {name}
+             * @example {index}_{name}_{width}x{height}
+             * @example photo-{date}-{index}
+             */
+            pattern: string;
+            /**
+             * @description Keep the folder structure of folder uploads and ZIP archives in the ZIP download.
+             * @default false
+             */
+            keepFolders: boolean;
+        };
+        /** @description A named pipeline for import, export, and the bundled presets. The same document is accepted by `POST /jobs` (as `pipeline` and `naming`). */
+        Preset: {
+            /**
+             * @description Marks the document as a Pixsheaf preset.
+             * @constant
+             */
+            format: "pixsheaf-preset";
+            /** @description Stable identifier; bundled presets use `web`, `thumbnail`, `social`, `archive`. */
+            id: string;
+            title: string;
+            description?: string;
+            pipeline: components["schemas"]["Pipeline"];
+            naming?: components["schemas"]["Naming"];
+        };
+        /** @description `report.json` in a ZIP download: one entry per file, in upload order, including failed and canceled files. */
+        Report: {
+            jobId: components["schemas"]["Id"];
+            /** Format: date-time */
+            createdAt: string;
+            files: components["schemas"]["ReportEntry"][];
+        };
+        ReportEntry: {
+            index: number;
+            /** @description Sanitized name of the upload or archive entry, with its folder. */
+            source: string;
+            status: components["schemas"]["FileStatus"];
+            inputBytes: number;
+            inputFormat?: components["schemas"]["InputFormat"];
+            /** @description Path of the result inside the ZIP archive. */
+            output?: string;
+            outputBytes?: number;
+            width?: number;
+            height?: number;
+            /** @description Size reduction against the input; negative if the output is larger. */
+            savedPercent?: number;
+            error?: components["schemas"]["FileError"];
         };
         JobCreated: {
             job: components["schemas"]["Job"];
@@ -235,8 +320,17 @@ export interface components {
         FileStatus: "queued" | "processing" | "done" | "failed" | "canceled";
         JobFile: {
             id: components["schemas"]["Id"];
-            /** @description Zero-based upload position within the job. */
+            /** @description Zero-based position within the job. */
             index: number;
+            /**
+             * @description `image` for an image; `archive` for an uploaded ZIP archive, which is done once it has been unpacked into image files.
+             * @enum {string}
+             */
+            kind: "image" | "archive";
+            /** @description Sanitized name of the upload or archive entry, with its folder. */
+            source?: string;
+            /** @description The archive this image came from. */
+            archiveId?: components["schemas"]["Id"];
             status: components["schemas"]["FileStatus"];
             input?: components["schemas"]["ImageInfo"];
             output?: components["schemas"]["OutputInfo"];
@@ -266,12 +360,12 @@ export interface components {
              * @description Stable machine-readable reason.
              * @enum {string}
              */
-            code: "unsupported_format" | "format_disabled" | "too_large" | "too_many_pixels" | "too_many_frames" | "decode_failed" | "encode_failed" | "target_size_unreachable" | "step_not_applicable" | "timeout" | "internal";
-            /** @description Human-readable explanation (English). Never contains file contents or paths. */
+            code: "unsupported_format" | "format_disabled" | "too_large" | "too_many_pixels" | "too_many_frames" | "decode_failed" | "encode_failed" | "target_size_unreachable" | "step_not_applicable" | "timeout" | "too_many_files" | "archive_invalid" | "archive_entry_unsupported" | "internal";
+            /** @description Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`. */
             message: string;
         };
         FileUpload: {
-            /** @description The image. */
+            /** @description The image or ZIP archive. */
             file: string;
         };
         /** @description Error details (RFC 9457). */
@@ -637,6 +731,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listPresets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bundled presets. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlNoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        presets: components["schemas"]["Preset"][];
+                    };
                 };
             };
             429: components["responses"]["TooManyRequests"];

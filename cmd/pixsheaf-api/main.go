@@ -81,6 +81,8 @@ func serve() int {
 	public := httpapi.New(cfg.ListenAddr, ui.FS(), logger, httpapi.Options{
 		Jobs:              manager,
 		MaxWatermarkBytes: cfg.MaxWatermarkKB << 10,
+		TrustedProxies:    cfg.TrustedProxies,
+		RequestsPerMinute: cfg.RequestsPerMinute,
 	})
 
 	errc := make(chan error, 2)
@@ -111,19 +113,22 @@ func serve() int {
 
 func jobLimits(cfg config.Config) jobs.Limits {
 	return jobs.Limits{
-		MaxUploadBytes:  int64(cfg.MaxUploadMB) << 20,
-		MaxJobBytes:     int64(cfg.MaxJobMB) << 20,
-		MaxFiles:        cfg.MaxFiles,
-		MaxOutputBytes:  int64(cfg.MaxOutputMB) << 20,
-		MaxInputPixels:  cfg.MaxInputPixels,
-		MaxOutputPixels: cfg.MaxOutputPixels,
-		MaxFrames:       cfg.MaxFrames,
-		MaxConcurrency:  cfg.MaxConcurrency,
-		MaxQueued:       cfg.MaxQueue,
-		MaxJobs:         cfg.MaxJobs,
-		MaxStoredBytes:  int64(cfg.MaxStoreMB) << 20,
-		TTL:             cfg.JobTTL,
-		LeaseTimeout:    cfg.JobTimeout + transferAllowance,
+		MaxUploadBytes:    int64(cfg.MaxUploadMB) << 20,
+		MaxJobBytes:       int64(cfg.MaxJobMB) << 20,
+		MaxFiles:          cfg.MaxFiles,
+		MaxOutputBytes:    int64(cfg.MaxOutputMB) << 20,
+		MaxInputPixels:    cfg.MaxInputPixels,
+		MaxOutputPixels:   cfg.MaxOutputPixels,
+		MaxFrames:         cfg.MaxFrames,
+		MaxConcurrency:    cfg.MaxConcurrency,
+		MaxQueued:         cfg.MaxQueue,
+		MaxJobs:           cfg.MaxJobs,
+		MaxStoredBytes:    int64(cfg.MaxStoreMB) << 20,
+		MaxJobsPerClient:  cfg.MaxJobsPerClient,
+		MaxArchiveBytes:   int64(cfg.MaxArchiveMB) << 20,
+		MaxArchiveEntries: cfg.MaxArchiveEntries,
+		TTL:               cfg.JobTTL,
+		LeaseTimeout:      cfg.JobTimeout + transferAllowance,
 	}
 }
 

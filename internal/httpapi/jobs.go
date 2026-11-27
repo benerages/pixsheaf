@@ -1,14 +1,18 @@
 package httpapi
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -37,16 +41,23 @@ type Options struct {
 	MaxSteps int
 	// MaxWatermarkBytes bounds an image watermark; 0 disables them.
 	MaxWatermarkBytes int
+	// TrustedProxies may set X-Forwarded-For (ADR 0022).
+	TrustedProxies []netip.Prefix
+	// RequestsPerMinute limits API requests per client; 0 disables the
+	// limit (tests only).
+	RequestsPerMinute int
 }
 
 type jobAPI struct {
-	m      *jobs.Manager
-	opts   Options
-	logger *slog.Logger
+	m       *jobs.Manager
+	opts    Options
+	logger  *slog.Logger
+	presets []json.RawMessage
 }
 
 func (a *jobAPI) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/capabilities", a.capabilities)
+	mux.HandleFunc("GET /api/v1/presets", a.listPresets)
 	mux.HandleFunc("POST /api/v1/jobs", csrf(a.createJob))
 	mux.HandleFunc("GET /api/v1/jobs/{jobId}", a.withJob(false, a.getJob))
 	mux.HandleFunc("DELETE /api/v1/jobs/{jobId}", csrf(a.withJob(false, a.deleteJob)))
@@ -97,8 +108,13 @@ func (a *jobAPI) capabilities(w http.ResponseWriter, _ *http.Request) {
 			MaxJobBytes:       int(lim.MaxJobBytes),
 			MaxInputPixels:    int(lim.MaxInputPixels),
 			MaxOutputPixels:   int(lim.MaxOutputPixels),
+			MaxFrames:         lim.MaxFrames,
 			MaxSteps:          maxSteps,
 			MaxWatermarkBytes: a.opts.MaxWatermarkBytes,
+			MaxArchiveBytes:   int(lim.MaxArchiveBytes),
+			MaxArchiveEntries: lim.MaxArchiveEntries,
+			MaxJobsPerClient:  lim.MaxJobsPerClient,
+			RequestsPerMinute: a.opts.RequestsPerMinute,
 		},
 	})
 }
@@ -121,6 +137,10 @@ func (a *jobAPI) createJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Pipeline      json.RawMessage `json:"pipeline"`
 		ExpectedFiles *int            `json:"expectedFiles"`
+		Naming        *struct {
+			Pattern     *string `json:"pattern"`
+			KeepFolders bool    `json:"keepFolders"`
+		} `json:"naming"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
@@ -137,19 +157,31 @@ func (a *jobAPI) createJob(w http.ResponseWriter, r *http.Request) {
 	} else {
 		verrs = append(verrs, a.checkPipeline(req.Pipeline)...)
 	}
+	naming := jobs.Naming{Pattern: "{name}"}
+	if req.Naming != nil {
+		naming.KeepFolders = req.Naming.KeepFolders
+		if req.Naming.Pattern != nil {
+			naming.Pattern = *req.Naming.Pattern
+			if err := jobs.ValidatePattern(naming.Pattern); err != nil {
+				verrs = append(verrs, api.ValidationError{Pointer: "/naming/pattern", Message: strings.TrimPrefix(err.Error(), "jobs: ")})
+			}
+		}
+	}
 	if len(verrs) > 0 {
 		writeProblem(w, http.StatusUnprocessableEntity, codePipelineInvalid, "", verrs...)
 		return
 	}
 
-	job, token, err := a.m.Create(req.Pipeline, *req.ExpectedFiles)
+	job, token, err := a.m.Create(req.Pipeline, *req.ExpectedFiles, naming, clientKeyFrom(r.Context()))
 	switch {
 	case errors.Is(err, jobs.ErrJobTooLarge):
 		writeProblem(w, http.StatusUnprocessableEntity, codeRequestInvalid, "",
 			api.ValidationError{Pointer: "/expectedFiles", Message: fmt.Sprintf("must be between 1 and %d", a.m.Limits().MaxFiles)})
 		return
-	case errors.Is(err, jobs.ErrBatchUnavailable):
-		writeProblem(w, http.StatusUnprocessableEntity, codeBatchUnavailable, "jobs with more than one file are not available yet")
+	case errors.Is(err, jobs.ErrClientJobs):
+		w.Header().Set("Retry-After", "60")
+		writeProblem(w, http.StatusTooManyRequests, codeClientJobs,
+			fmt.Sprintf("at most %d open jobs per client; download or delete one first", a.m.Limits().MaxJobsPerClient))
 		return
 	case errors.Is(err, jobs.ErrTooManyJobs):
 		writeBusy(w, codeTooManyJobs, "too many open jobs", 10)
@@ -230,7 +262,7 @@ func (a *jobAPI) uploadFile(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	defer func() { _ = part.Close() }()
 
-	f, err := a.m.AddFile(id, part.FileName(), part)
+	f, err := a.m.AddFile(id, uploadName(part), part)
 	var mbe *http.MaxBytesError
 	switch {
 	case err == nil:
@@ -297,6 +329,11 @@ func (a *jobAPI) download(w http.ResponseWriter, _ *http.Request, id string) {
 		writeProblem(w, http.StatusInternalServerError, codeInternal, "")
 		return
 	}
+	defer d.Release()
+	if d.IsArchive() {
+		a.sendArchive(w, d)
+		return
+	}
 	defer func() { _ = d.File.Close() }()
 	h := w.Header()
 	h.Set("Content-Type", d.ContentType)
@@ -311,6 +348,17 @@ func (a *jobAPI) download(w http.ResponseWriter, _ *http.Request, id string) {
 	}
 }
 
+// uploadName returns the file name of a multipart part including its
+// folder path. Part.FileName drops the folders (filepath.Base), but folder
+// uploads send them on purpose; jobs.SourceName sanitizes every segment.
+func uploadName(p *multipart.Part) string {
+	_, params, err := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
+	if err != nil {
+		return ""
+	}
+	return params["filename"]
+}
+
 // contentDisposition builds an RFC 6266 attachment header with an ASCII
 // fallback and the UTF-8 name (RFC 8187).
 func contentDisposition(name string) string {
@@ -323,6 +371,87 @@ func contentDisposition(name string) string {
 		}
 	}
 	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, ascii.String(), url.PathEscape(name))
+}
+
+// sendArchive streams the results and report.json as a ZIP archive.
+// Images are stored without compression (they are compressed already);
+// nothing is buffered beyond the copy buffer.
+func (a *jobAPI) sendArchive(w http.ResponseWriter, d jobs.Download) {
+	h := w.Header()
+	h.Set("Content-Type", "application/zip")
+	h.Set("Content-Disposition", contentDisposition("pixsheaf-"+d.Created.UTC().Format("2006-01-02")+".zip"))
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+
+	zw := zip.NewWriter(w)
+	for _, e := range d.Entries {
+		_ = rc.SetWriteDeadline(time.Now().Add(2 * time.Minute))
+		if err := a.addEntry(zw, e, d.Created); err != nil {
+			a.logger.Warn("archive download interrupted", "err", err)
+			return
+		}
+	}
+	report, err := json.MarshalIndent(toReport(d), "", "  ")
+	if err == nil {
+		var fw io.Writer
+		fw, err = zw.CreateHeader(&zip.FileHeader{Name: "report.json", Method: zip.Deflate, Modified: d.Created})
+		if err == nil {
+			_, err = fw.Write(report)
+		}
+	}
+	if err == nil {
+		err = zw.Close()
+	}
+	if err != nil {
+		a.logger.Warn("archive download interrupted", "err", err)
+	}
+}
+
+func (a *jobAPI) addEntry(zw *zip.Writer, e jobs.ZipEntry, modified time.Time) error {
+	f, err := a.m.OpenEntry(e)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	fw, err := zw.CreateHeader(&zip.FileHeader{Name: e.Path, Method: zip.Store, Modified: modified})
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(fw, f)
+	return err
+}
+
+// toReport builds report.json (schema Report).
+func toReport(d jobs.Download) api.Report {
+	r := api.Report{JobId: d.JobID, CreatedAt: d.Created.UTC(), Files: make([]api.ReportEntry, 0, len(d.Files))}
+	inZip := map[int]bool{}
+	for _, e := range d.Entries {
+		inZip[e.Index] = true
+	}
+	for _, f := range d.Files {
+		e := api.ReportEntry{
+			Index: f.Index, Source: f.Source, Status: api.FileStatus(f.Status), InputBytes: int(f.InputBytes),
+		}
+		if f.InputFormat != "" {
+			format := api.InputFormat(f.InputFormat)
+			e.InputFormat = &format
+		}
+		if f.Output != nil && inZip[f.Index] {
+			name, n, w, h := f.OutputName, int(f.OutputBytes), f.Output.Width, f.Output.Height
+			e.Output, e.OutputBytes, e.Width, e.Height = &name, &n, &w, &h
+			if f.InputBytes > 0 {
+				saved := float32(math.Round(1000*(1-float64(f.OutputBytes)/float64(f.InputBytes))) / 10)
+				e.SavedPercent = &saved
+			}
+		}
+		if f.ErrorCode != "" {
+			e.Error = &api.FileError{Code: api.FileErrorCode(f.ErrorCode), Message: f.ErrorMsg}
+		}
+		r.Files = append(r.Files, e)
+	}
+	return r
 }
 
 // events streams job and file changes as Server-Sent Events.
@@ -399,8 +528,9 @@ func toAPIJob(j jobs.Job) api.Job {
 }
 
 func toAPIFile(f jobs.File) api.JobFile {
+	source := f.Source
 	out := api.JobFile{
-		Id: f.ID, Index: f.Index, Status: api.FileStatus(f.Status),
+		Id: f.ID, Index: f.Index, Kind: api.Image, Status: api.FileStatus(f.Status), Source: &source,
 		Input: &api.ImageInfo{Bytes: int(f.InputBytes), Format: api.InputFormat(f.InputFormat)},
 	}
 	if f.Output != nil {

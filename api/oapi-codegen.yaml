@@ -6,3 +6,7 @@ package: api
 output: internal/api/api.gen.go
 generate:
   models: true
+output-options:
+  # Keep schemas that no operation references directly, such as Report
+  # (the report.json inside a ZIP download).
+  skip-prune: true

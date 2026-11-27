@@ -1,0 +1,14 @@
+{
+  "format": "pixsheaf-preset",
+  "id": "archive",
+  "title": "Archive",
+  "description": "Full size, lossless JPEG XL, metadata kept except the location, color profile kept.",
+  "pipeline": {
+    "version": 1,
+    "steps": [
+      {"op": "convert", "params": {"format": "jxl", "lossless": true}}
+    ],
+    "metadata": {"keep": true},
+    "colorSpace": "keep"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "format": "pixsheaf-preset",
+  "id": "web",
+  "title": "Web",
+  "description": "For websites: at most 2048 pixels on the longest edge, WebP at quality 80, metadata removed.",
+  "pipeline": {
+    "version": 1,
+    "steps": [
+      {"op": "autoOrient"},
+      {"op": "resize", "when": {"longestEdgeGt": 2048}, "params": {"longestEdge": 2048}},
+      {"op": "convert", "params": {"format": "webp", "quality": 80}}
+    ]
+  }
+}
