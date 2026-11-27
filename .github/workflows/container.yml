@@ -31,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Container isolation tests (runc)
-        run: tests/container/run.sh
+        run: bash tests/container/run.sh
       - name: Scan API image
         uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
