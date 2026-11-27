@@ -31,8 +31,16 @@ The spike in `spikes/uds-netnone/` tested two variants of the shared socket volu
 **Consequences of the amendment:**
 
 - The socket directory lives on the Docker volume storage (disk), not in RAM. It contains only the socket inode; job payloads are streamed over the socket and never written there. The worker cannot write to it at all, so it cannot be used to persist data.
-- The image must create `/run/pixsheaf` with the service UID and mode `0770`; a container test checks ownership and mode.
+- The image must create `/run/pixsheaf` with the service UID and mode `0770` (tightened to `0700`, see the second amendment); a container test checks ownership and mode.
 - The same UID (10001) must be used in the API and worker images.
+
+## Amendment 2026-11-27: owner-only permissions
+
+API and worker images run as the same UID (10001), so the group bits on the socket and its directory grant nothing that is needed. Following the project rule that the more secure option wins, the project owner decided to drop them.
+
+**Decision (amended):** The socket has mode `0600` and `/run/pixsheaf` has mode `0700`, both owned by `10001:10001`. Running workers under a different UID than the API is not supported; doing so would require a new ADR.
+
+**Consequences:** One fewer `nolint` exception (gosec G302). A deployment that overrides the `user:` of only one service breaks the socket connection, which the container self-check reports as "api socket reachable: FAIL".
 
 ## Validation
 
@@ -41,4 +49,4 @@ The spike in `spikes/uds-netnone/` tested two variants of the shared socket volu
 | Docker 29.10.0, runc, `userns-remap` enabled, kernel 6.12.118 (Debian 13), amd64 | PASS (13/13) | 2026-11-27 |
 | gVisor (`runsc`) | Not tested yet: runtime not installed on the test host | — |
 | Rootless Docker | Not tested yet | — |
-| Docker without `userns-remap` (GitHub Actions runners) | Runs in CI from Phase 2 | — |
+| Docker without `userns-remap` (GitHub Actions runner, Ubuntu 24.04, runc) | PASS (container workflow, self-check) | 2026-11-27 |

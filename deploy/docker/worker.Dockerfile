@@ -24,7 +24,7 @@ RUN go build -trimpath \
 FROM ${RUNTIME_IMAGE}
 COPY --from=build /out/pixsheaf-worker /usr/local/bin/pixsheaf-worker
 # Same owner as in the API image; the worker mounts the volume read-only.
-COPY --from=build --chown=10001:10001 --chmod=0770 /out/run/pixsheaf /run/pixsheaf
+COPY --from=build --chown=10001:10001 --chmod=0700 /out/run/pixsheaf /run/pixsheaf
 USER 10001:10001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/usr/local/bin/pixsheaf-worker", "healthcheck"]

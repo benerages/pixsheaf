@@ -40,7 +40,7 @@ FROM ${RUNTIME_IMAGE}
 COPY --from=build /out/pixsheaf-api /usr/local/bin/pixsheaf-api
 # Socket directory for the worker channel; an empty named volume mounted
 # here inherits this ownership (ADR 0007, amendment).
-COPY --from=build --chown=10001:10001 --chmod=0770 /out/run/pixsheaf /run/pixsheaf
+COPY --from=build --chown=10001:10001 --chmod=0700 /out/run/pixsheaf /run/pixsheaf
 USER 10001:10001
 ENV PIXSHEAF_LISTEN_ADDR=:8080
 EXPOSE 8080

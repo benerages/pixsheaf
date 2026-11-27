@@ -18,7 +18,8 @@ import (
 const PingPath = "/internal/v1/ping"
 
 // Listen creates the Unix socket at path, replacing a stale socket from a
-// previous run, and restricts it to owner and group (mode 0660).
+// previous run, and restricts it to its owner (mode 0600). API and worker
+// run as the same UID (ADR 0007), so no group or world access is needed.
 func Listen(ctx context.Context, path string) (net.Listener, error) {
 	if fi, err := os.Lstat(path); err == nil {
 		if fi.Mode()&os.ModeSocket == 0 {
@@ -33,9 +34,7 @@ func Listen(ctx context.Context, path string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Mode 0660 as specified in ADR 0007: no world access; the group bit
-	// lets operators run workers under another UID in the service group.
-	if err := os.Chmod(path, 0o660); err != nil { //nolint:gosec // G302: socket mode fixed by ADR 0007
+	if err := os.Chmod(path, 0o600); err != nil {
 		_ = ln.Close()
 		return nil, err
 	}

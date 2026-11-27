@@ -29,8 +29,9 @@ The worker's `selfcheck` subcommand verifies from inside the running container: 
 | `bootstrap.sh` produced a lockfile with only pnpm's own `packageManagerDependencies` and no resolved packages | Install pnpm via `npm install --global` (same as Dockerfile and CI), store in `/tmp`, and fail unless `svelte`, `vite`, and `typescript` are resolved |
 | Five pinned devDependencies were younger than the 7-day release-age gate | Re-pinned to the newest mature versions chosen by pnpm (`svelte` 5.59.0, `vite` 8.3.8, `@sveltejs/vite-plugin-svelte` 7.3.1, `typescript-eslint` 8.73.0); new helper `scripts/pin-mature-deps.sh`. Renovate raises them once they mature. |
 | `pnpm add --save-exact` kept caret ranges when a range was passed | Helper re-adds each package with its resolved version in a second pass |
-| golangci-lint: 12 findings (errcheck 7, noctx 3, gosec 2) | Explicitly discarded close/remove errors; `transport.Listen` now takes a context and uses `net.ListenConfig`; `DialContext`, `CommandContext`; justified `nolint` for G304 (probe path from config) and G302 (socket mode 0660 per ADR 0007) |
+| golangci-lint: 12 findings (errcheck 7, noctx 3, gosec 2) | Explicitly discarded close/remove errors; `transport.Listen` now takes a context and uses `net.ListenConfig`; `DialContext`, `CommandContext`; justified `nolint` for G304 (probe path from config); G302 (socket mode) resolved by the owner-only permissions row below |
 | `run.sh` lost its executable bit (repo copied from a sync folder with mode 0600) | Workflow calls `bash tests/container/run.sh`; executable bits restored in the index |
+| Socket mode 0660 and directory 0770 although API and worker share one UID | Owner decision: owner-only permissions (socket 0600, directory 0700); ADR 0007 amended |
 | Renovate's regex for `pnpm@X.Y.Z` no longer matched the rewritten bootstrap script | Literal `pnpm@12.23.0` restored in both scripts |
 
 ## 4. Known gaps carried into later phases
@@ -42,14 +43,11 @@ The worker's `selfcheck` subcommand verifies from inside the running container: 
 | harden-runner runs with `egress-policy: audit`, not `block` | Phase 6, after collecting the allowed endpoints from audit logs |
 | Trivy scan, release workflow (multi-arch, SBOM, cosign, provenance) | Phase 6 |
 | Worker image has no libvips yet | Phase 3 |
-| Socket mode 0660 although both images use the same UID; 0600 would suffice | Owner decision (optional ADR 0007 amendment) |
 | Container test under gVisor (`run.sh gvisor`) not run yet | Phase 3 or 6 |
 
-## 5. Repository settings still to do (owner)
+## 5. Repository settings
 
-- Enable private vulnerability reporting.
-- Install the Renovate GitHub App for the repository.
-- Actions settings: require actions to be pinned to a full-length commit SHA.
+Done by the owner on 2026-11-27: private vulnerability reporting enabled, Renovate GitHub App installed, Actions require full-length commit SHA pins.
 
 ## 6. Next: Phase 3
 

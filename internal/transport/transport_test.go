@@ -22,8 +22,8 @@ func TestPingOverSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := fi.Mode().Perm(); perm != 0o660 {
-		t.Errorf("socket mode = %o, want 660", perm)
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("socket mode = %o, want 600", perm)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

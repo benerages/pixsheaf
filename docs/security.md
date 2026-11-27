@@ -54,7 +54,7 @@ ASVS references are to **OWASP ASVS 5.0 chapter V5 (File Handling)** ([ASVS 5.0 
 |---|---|---|---|
 | S1 | A client spoofs `X-Forwarded-For` to evade per-IP limits | Honor XFF only from configured trusted proxies; otherwise use the socket peer address | Project §HTTP (rate limiting) |
 | S2 | Cross-site request starts jobs (CSRF) | Same-origin check plus a CSRF token on state-changing requests; CORS off | Project §HTTP |
-| S3 | A compromised worker impersonates another worker, or a fake process listens on the socket | The API owns the single socket in pull mode; socket mode 0660, matching UID ≥ 10000; volume mounted `noexec,nosuid,nodev`; per-worker subdirectories if workers listen | ADR 0007 |
+| S3 | A compromised worker impersonates another worker, or a fake process listens on the socket | The API owns the single socket in pull mode; socket mode 0600 and socket directory 0700, same UID ≥ 10000 in API and worker; volume mounted `noexec,nosuid,nodev`; per-worker subdirectories if workers listen | ADR 0007 |
 | S4 | A tampered base image or action is substituted | Pin by digest and SHA; verify distroless with cosign (`keyless@distroless.iam.gserviceaccount.com`) ([distroless](https://github.com/GoogleContainerTools/distroless)) | Project §Supply chain; ADR 0013 |
 
 **Tampering**
