@@ -172,6 +172,9 @@ var loaderFormats = []struct{ prefix, format string }{
 // count. No pixel data is decoded, so it is the place for the size checks
 // against decompression bombs (ADR 0008).
 func Inspect(buf []byte) (Info, error) {
+	if isBMP(buf) {
+		return inspectBMP(buf)
+	}
 	if _, err := FindLoader(buf); err != nil {
 		return Info{}, err
 	}

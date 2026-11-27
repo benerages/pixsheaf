@@ -131,10 +131,6 @@ func TestProcessErrors(t *testing.T) {
 	if _, err := Process([]byte("not an image"), p, ProcessLimits{}); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("garbage: err = %v, want ErrUnsupported", err)
 	}
-	p = parse(t, `{"version":1,"steps":[{"op":"convert","params":{"format":"bmp"}}]}`)
-	if _, err := Process(in, p, ProcessLimits{}); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("bmp: err = %v, want ErrNotImplemented (until Phase 3d-3)", err)
-	}
 }
 
 func TestProcessStripsMetadataByDefault(t *testing.T) {

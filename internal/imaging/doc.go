@@ -33,7 +33,7 @@ var ErrInvalidInput = errors.New("imaging: the step does not fit the image")
 var ErrTargetUnreachable = errors.New("imaging: the target size cannot be reached")
 
 // ErrNotImplemented marks pipeline features that follow in a later step of
-// Phase 3 (BMP and PDF output, animation).
+// Phase 3 (animation).
 var ErrNotImplemented = errors.New("imaging: not implemented yet")
 
 // ProcessLimits bound Process. Zero means no limit.
@@ -56,7 +56,7 @@ type Output struct {
 // Info describes an image header.
 type Info struct {
 	// Format is an input format name from api/openapi.yaml: jpeg, png,
-	// webp, gif, tiff, avif, heif, or jxl.
+	// webp, gif, tiff, bmp, avif, heif, or jxl.
 	Format string
 	Width  int
 	Height int

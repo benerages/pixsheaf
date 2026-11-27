@@ -500,7 +500,7 @@ type ConditionOrientation string
 
 // ConvertParams defines model for ConvertParams.
 type ConvertParams struct {
-	// Format Formats that can be produced. `pdf` embeds the image in a one-page PDF.
+	// Format Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`.
 	Format OutputFormat `json:"format"`
 
 	// Lossless Lossless mode for webp and jxl (png, gif, tiff, and bmp are always lossless). Not available for jpeg, avif, and pdf.
@@ -602,7 +602,7 @@ type Id = string
 type ImageInfo struct {
 	Bytes int `json:"bytes"`
 
-	// Format Formats accepted for upload, detected by magic bytes (ADR 0014).
+	// Format Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels.
 	Format InputFormat `json:"format"`
 	Height *int        `json:"height,omitempty"`
 
@@ -611,7 +611,7 @@ type ImageInfo struct {
 	Width *int `json:"width,omitempty"`
 }
 
-// InputFormat Formats accepted for upload, detected by magic bytes (ADR 0014).
+// InputFormat Formats accepted for upload, detected by magic bytes (ADR 0014). `bmp` must be uncompressed (1, 2, 4, 8, 24 or 32 bits per pixel; RLE is rejected as `unsupported_format`) and is limited to 32 megapixels.
 type InputFormat string
 
 // Job defines model for Job.
@@ -705,14 +705,14 @@ type MetadataPolicy struct {
 	KeepLocation *bool `json:"keepLocation,omitempty"`
 }
 
-// OutputFormat Formats that can be produced. `pdf` embeds the image in a one-page PDF.
+// OutputFormat Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`.
 type OutputFormat string
 
 // OutputInfo Facts about the processed image.
 type OutputInfo struct {
 	Bytes int `json:"bytes"`
 
-	// Format Formats that can be produced. `pdf` embeds the image in a one-page PDF.
+	// Format Formats that can be produced. `pdf` embeds the image as a JPEG in a one-page A4 PDF (orientation follows the image, 0.5 inch margins, at most 96 DPI so small images are not enlarged). `bmp` is written as uncompressed 24-bit BMP; transparency is flattened onto white, as for `jpeg` and `pdf`.
 	Format OutputFormat `json:"format"`
 	Height int          `json:"height"`
 

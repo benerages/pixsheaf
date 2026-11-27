@@ -8,7 +8,8 @@ package imaging
 #include <string.h>
 #include <vips/vips.h>
 
-enum { PX_JPEG, PX_PNG, PX_WEBP, PX_GIF, PX_TIFF, PX_AVIF, PX_JXL };
+// PX_BMP and PX_PDF are encoded in Go (bmp.go, pdf.go), not by px_save.
+enum { PX_JPEG, PX_PNG, PX_WEBP, PX_GIF, PX_TIFF, PX_AVIF, PX_JXL, PX_BMP, PX_PDF };
 
 typedef struct {
 	int format;
@@ -141,6 +142,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"unsafe"
 
 	"github.com/benerages/pixsheaf/internal/pipeline"
@@ -159,6 +161,8 @@ var saveFormats = map[string]struct {
 	"tiff": {C.PX_TIFF, 0, true},
 	"avif": {C.PX_AVIF, 55, true},
 	"jxl":  {C.PX_JXL, 80, true},
+	"bmp":  {C.PX_BMP, 0, false},
+	"pdf":  {C.PX_PDF, 82, false},
 }
 
 // image owns one VipsImage reference.
@@ -233,10 +237,18 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	// is encoded, so it gets a C copy instead of a Go pointer.
 	s := &session{}
 	defer s.free()
-	buf := s.cbytes(input)
 	im := &image{}
-	if C.px_load(buf, C.size_t(len(input)), &im.p) != 0 {
-		return Output{}, fmt.Errorf("%w: %s", ErrDecode, lastError())
+	if info.Format == "bmp" {
+		if im, err = loadBMP(input, info); err != nil {
+			return Output{}, err
+		}
+		// Return the decoded Go copy to the OS before libvips allocates.
+		debug.FreeOSMemory()
+	} else {
+		buf := s.cbytes(input)
+		if C.px_load(buf, C.size_t(len(input)), &im.p) != 0 {
+			return Output{}, fmt.Errorf("%w: %s", ErrDecode, lastError())
+		}
 	}
 	defer im.close()
 
@@ -260,7 +272,8 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	if !ok {
 		return Output{}, fmt.Errorf("%w: output format %s", ErrNotImplemented, format)
 	}
-	if p.ColorSpace == "srgb" {
+	// PDF embeds the image as DeviceRGB or DeviceGray, so it is always sRGB.
+	if p.ColorSpace == "srgb" || format == "pdf" {
 		if err := im.toSRGB(); err != nil {
 			return Output{}, fmt.Errorf("%w: %v", ErrDecode, err)
 		}
@@ -304,9 +317,35 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	return Output{Data: data, Format: format, Width: final.Width, Height: final.Height}, nil
 }
 
+// loadBMP decodes a BMP in Go and copies it into libvips. The Go image is
+// garbage once this returns.
+func loadBMP(input []byte, info Info) (*image, error) {
+	src, err := decodeBMP(input, info)
+	if err != nil {
+		return nil, err
+	}
+	return fromGo(src)
+}
+
 // encode runs the saver once. quality 0 means the saver's default; for PNG
 // a quality enables palette quantization.
 func encode(im *image, format C.int, conv pipeline.Convert, quality int, keep C.int) ([]byte, error) {
+	switch format {
+	case C.PX_BMP:
+		img, free, err := toNRGBA(im)
+		if err != nil {
+			return nil, err
+		}
+		defer free()
+		return encodeBMP(img)
+	case C.PX_PDF:
+		jpg, err := encode(im, C.PX_JPEG, conv, quality, keep)
+		if err != nil {
+			return nil, err
+		}
+		s := im.size()
+		return wrapJPEG(jpg, s.Width, s.Height, C.vips_image_get_bands(im.p) < 3), nil
+	}
 	opts := C.px_save_opts{
 		format:      format,
 		q:           C.int(quality),
@@ -346,7 +385,7 @@ func encodeToTarget(im *image, format C.int, conv pipeline.Convert, keep C.int, 
 		}
 	}
 	switch format {
-	case C.PX_JPEG, C.PX_WEBP, C.PX_AVIF, C.PX_JXL:
+	case C.PX_JPEG, C.PX_WEBP, C.PX_AVIF, C.PX_JXL, C.PX_PDF:
 	case C.PX_PNG:
 		data, err := encode(im, format, conv, 0, keep)
 		if err != nil || len(data) <= limit {

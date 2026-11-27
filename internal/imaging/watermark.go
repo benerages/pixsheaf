@@ -11,17 +11,6 @@ static int px_load_overlay(const void *buf, size_t len, VipsImage **out) {
 	return *out ? 0 : -1;
 }
 
-// px_from_nrgba wraps non-premultiplied 8-bit RGBA pixels (a copy is made).
-static int px_from_nrgba(const void *pix, int width, int height, VipsImage **out) {
-	VipsImage *t = vips_image_new_from_memory_copy(pix, (size_t) width * height * 4,
-		width, height, 4, VIPS_FORMAT_UCHAR);
-	if (!t)
-		return -1;
-	int r = vips_copy(t, out, "interpretation", VIPS_INTERPRETATION_sRGB, NULL);
-	g_object_unref(t);
-	return r;
-}
-
 // px_overlay_prepare converts an overlay to 8-bit sRGB with alpha, scales
 // it to width (premultiplied, so edges do not get dark fringes), and
 // multiplies the alpha band by opacity.
@@ -84,7 +73,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
-	"unsafe"
 
 	"github.com/benerages/pixsheaf/internal/pipeline"
 )
@@ -124,10 +112,11 @@ func watermark(ses *session, im *image, w pipeline.Watermark, cur pipeline.Size)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
-		b := img.Bounds()
-		if C.px_from_nrgba(unsafe.Pointer(&img.Pix[0]), C.int(b.Dx()), C.int(b.Dy()), &ov.p) != 0 {
-			return fmt.Errorf("watermark text: %s", lastError())
+		t, err := fromGo(img)
+		if err != nil {
+			return fmt.Errorf("watermark text: %w", err)
 		}
+		ov.p, t.p = t.p, nil
 	}
 
 	src := ov.size()
