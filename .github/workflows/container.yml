@@ -1,0 +1,50 @@
+# Builds both images, runs the container isolation tests, and scans the
+# images for vulnerabilities. Nothing is pushed in Phase 2.
+name: container
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly rebuild so patched base packages are picked up (Mondays 04:17 UTC).
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-scan:
+    name: Build, isolation test, Grype
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Container isolation tests (runc)
+        run: tests/container/run.sh
+      - name: Scan API image
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
+        with:
+          image: ghcr.io/benerages/pixsheaf-api:latest
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+      - name: Scan worker image
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
+        with:
+          image: ghcr.io/benerages/pixsheaf-worker:latest
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table

@@ -1,0 +1,18 @@
+# Go
+/coverage.out
+/bin/
+
+# Web
+node_modules/
+/internal/ui/dist/*
+!/internal/ui/dist/index.html
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.DS_Store
+*.swp

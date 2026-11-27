@@ -1,0 +1,11 @@
+.git
+.github
+**/node_modules
+docs
+spikes
+tests
+assets/brand/png
+*.md
+.env
+.env.*
+!.env.example

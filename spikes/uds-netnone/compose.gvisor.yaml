@@ -1,0 +1,8 @@
+# Optional override: run both containers under gVisor.
+# Requires runsc installed and registered as a Docker runtime.
+# Usage: ./run.sh gvisor
+services:
+  server:
+    runtime: runsc
+  worker:
+    runtime: runsc

@@ -1,0 +1,25 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    rules:
+      # Tests use plain http.Get against httptest servers.
+      - path: _test\.go
+        linters: [noctx, bodyclose]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

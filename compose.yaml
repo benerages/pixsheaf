@@ -1,0 +1,64 @@
+# Pixsheaf: docker compose up -d
+# The API listens on 127.0.0.1:8080 only; put a TLS reverse proxy in front
+# of it to publish it (docs/deployment.md). Settings: .env (see .env.example).
+name: pixsheaf
+
+x-hardening: &hardening
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - "no-new-privileges:true"
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  api:
+    <<: *hardening
+    image: ghcr.io/benerages/pixsheaf-api:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [frontend]
+    volumes:
+      - jobsock:/run/pixsheaf
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev,mode=1777
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+
+  worker:
+    <<: *hardening
+    image: ghcr.io/benerages/pixsheaf-worker:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: deploy/docker/worker.Dockerfile
+    # No network at all; the only channel is the API socket (ADR 0007).
+    network_mode: none
+    volumes:
+      - jobsock:/run/pixsheaf:ro
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev,mode=1777
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+
+networks:
+  frontend: {}
+
+volumes:
+  # Plain named volume: ownership comes from the images (ADR 0007).
+  jobsock: {}

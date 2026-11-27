@@ -1,0 +1,53 @@
+# Spike for ADR 0007: Unix socket on a shared volume,
+# worker with network_mode "none". Run with ./run.sh.
+#
+# SPIKE_VOLUME selects the volume variant:
+#   sock_tmpfs  tmpfs-backed volume (preferred)
+#   sock_image  plain named volume, ownership taken from the image
+name: pixsheaf-spike-uds
+
+x-hardening: &hardening
+  build: .
+  image: pixsheaf-spike-uds:local
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - "no-new-privileges:true"
+  tmpfs:
+    - /tmp:size=16m,noexec,nosuid,nodev,mode=1777
+  mem_limit: 128m
+  pids_limit: 64
+  cpus: 0.5
+
+services:
+  server:
+    <<: *hardening
+    command: ["server"]
+    # Mimics the API: on a bridge network, but no published ports.
+    networks: [internal]
+    volumes:
+      - ${SPIKE_VOLUME:-sock_tmpfs}:/run/pixsheaf
+
+  worker:
+    <<: *hardening
+    command: ["worker"]
+    network_mode: none
+    depends_on: [server]
+    volumes:
+      # Read-only: connecting to an existing socket needs no write access
+      # to the directory.
+      - ${SPIKE_VOLUME:-sock_tmpfs}:/run/pixsheaf:ro
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  sock_tmpfs:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=10001,gid=10001,mode=0770,noexec,nosuid,nodev"
+  sock_image: {}

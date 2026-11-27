@@ -1,0 +1,6 @@
+# Optional: run the workers under gVisor (ADR 0006).
+# Requires runsc installed and registered as a Docker runtime:
+#   docker compose -f compose.yaml -f deploy/compose.gvisor.yaml up -d
+services:
+  worker:
+    runtime: runsc

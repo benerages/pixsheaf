@@ -1,0 +1,8 @@
+# Every change needs review by the maintainer.
+*                   @benerages
+
+# Paths abused by supply-chain malware for persistence (ADR 0013).
+/.github/           @benerages
+/.claude/           @benerages
+/.vscode/           @benerages
+/renovate.json      @benerages

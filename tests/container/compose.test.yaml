@@ -1,0 +1,10 @@
+# Container test: the worker runs its isolation self-check instead of the
+# normal loop and exits with its result.
+#   docker compose -f compose.yaml -f tests/container/compose.test.yaml \
+#     up --build --abort-on-container-exit --exit-code-from worker
+services:
+  worker:
+    command: ["selfcheck"]
+    restart: "no"
+  api:
+    restart: "no"

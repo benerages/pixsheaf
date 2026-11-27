@@ -1,0 +1,12 @@
+# pnpm settings (pnpm 11+ reads them from this file). Supply-chain
+# hardening per ADR 0013.
+packages:
+  - .
+
+# Do not install package versions younger than 7 days (minutes).
+minimumReleaseAge: 10080
+# Reject transitive dependencies from git, tarball, or file sources.
+blockExoticSubdeps: true
+# Fail if a dependency wants to run an install script that is not allowed.
+strictDepBuilds: true
+engineStrict: true
