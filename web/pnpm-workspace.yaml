@@ -10,3 +10,10 @@ blockExoticSubdeps: true
 # Fail if a dependency wants to run an install script that is not allowed.
 strictDepBuilds: true
 engineStrict: true
+
+# Security overrides for transitive dependencies. Remove an entry once the
+# dependents require a fixed version themselves.
+overrides:
+  # GHSA-g3hv-75wg-m249 (eslint 10.14.0 depends on minimatch ^10); 11.0.9 is
+  # already used by other dev dependencies.
+  "minimatch@>=7.0.0 <11.0.1": "11.0.9"

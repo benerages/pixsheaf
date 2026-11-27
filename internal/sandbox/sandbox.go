@@ -153,7 +153,7 @@ type Report struct {
 func Probe() Report {
 	var r Report
 	if abi, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, 0, 0, unix.LANDLOCK_CREATE_RULESET_VERSION); errno == 0 {
-		r.LandlockABI = int(abi) //nolint:gosec // G115: the ABI version is a small integer
+		r.LandlockABI = int(abi)
 	}
 
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)

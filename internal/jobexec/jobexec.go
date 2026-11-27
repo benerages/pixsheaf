@@ -80,7 +80,7 @@ func (r Runner) Run(ctx context.Context, req jobproto.Request, input []byte) (jo
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
-	cpuSeconds := uint64(r.Timeout/time.Second) + 1 //nolint:gosec // G115: Timeout is positive
+	cpuSeconds := uint64(r.Timeout/time.Second) + 1
 	args := append(append([]string{}, r.Args...),
 		"--memory="+strconv.FormatUint(r.MemoryBytes, 10),
 		"--cpu="+strconv.FormatUint(cpuSeconds, 10),
