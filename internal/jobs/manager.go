@@ -422,6 +422,7 @@ func (m *Manager) Complete(taskID string, resp jobproto.Response, output io.Read
 	f.status = FileDone
 	f.output, f.out, f.outBytes = path, resp.Output, n
 	m.stored += n
+	m.signal()
 	return nil
 }
 
@@ -447,6 +448,7 @@ func (m *Manager) failLocked(f *file, code, msg string) {
 	}
 	m.removeInput(f)
 	f.status, f.errCode, f.errMsg = FileFailed, code, msg
+	m.signal()
 }
 
 func (m *Manager) removeInput(f *file) {
@@ -530,6 +532,59 @@ func (m *Manager) deleteLocked(j *job) {
 			f.status = FileCanceled
 		}
 	}
+	m.signal()
+}
+
+// GetFile returns a snapshot of one file of a job.
+func (m *Manager) GetFile(jobID, fileID string) (File, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, err := m.fileLocked(jobID, fileID)
+	if err != nil {
+		return File{}, err
+	}
+	return f.snapshot(), nil
+}
+
+// CancelFile stops one file and deletes its data. A file that is already
+// finished keeps its status; its result is deleted if it had one, so that
+// it is not part of the download.
+func (m *Manager) CancelFile(jobID, fileID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, err := m.fileLocked(jobID, fileID)
+	if err != nil {
+		return err
+	}
+	m.queue = slices.DeleteFunc(m.queue, func(q *file) bool { return q == f })
+	m.removeInput(f)
+	m.removeOutput(f)
+	if f.status != FileFailed {
+		f.status = FileCanceled
+	}
+	m.signal()
+	return nil
+}
+
+func (m *Manager) fileLocked(jobID, fileID string) (*file, error) {
+	j, ok := m.jobs[jobID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	for _, f := range j.files {
+		if f.id == fileID {
+			return f, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+// Changes returns a channel that is closed at the next change of any job.
+// Callers take a snapshot after receiving it and call Changes again.
+func (m *Manager) Changes() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.wake
 }
 
 // Sweep expires jobs past their lifetime and leases past their deadline.

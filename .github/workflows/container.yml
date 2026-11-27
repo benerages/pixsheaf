@@ -35,6 +35,15 @@ jobs:
         run: docker build --file deploy/docker/worker.Dockerfile --target test .
       - name: Container isolation tests (runc)
         run: bash tests/container/run.sh
+      - name: End-to-end test (single image)
+        run: |
+          docker compose up --detach --build --wait
+          bash tests/e2e/single-image.sh
+      - name: Stop the stack
+        if: always()
+        run: |
+          docker compose logs --no-color --tail 40
+          docker compose down --volumes
       - name: Scan API image
         uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:

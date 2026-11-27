@@ -105,7 +105,7 @@ func toNRGBA(im *image) (img *goimage.NRGBA, free func(), err error) {
 	var p unsafe.Pointer
 	var n C.size_t
 	if C.px_to_rgba8(im.p, &p, &n) != 0 {
-		return nil, nil, fmt.Errorf("%w: %s", ErrEncode, lastError())
+		return nil, nil, encodeError(lastError())
 	}
 	s := im.size()
 	if int(n) != 4*s.Width*s.Height {

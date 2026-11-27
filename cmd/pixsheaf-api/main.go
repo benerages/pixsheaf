@@ -78,7 +78,10 @@ func serve() int {
 		return 1
 	}
 	internal := transport.NewServer(manager)
-	public := httpapi.New(cfg.ListenAddr, ui.FS(), logger)
+	public := httpapi.New(cfg.ListenAddr, ui.FS(), logger, httpapi.Options{
+		Jobs:              manager,
+		MaxWatermarkBytes: cfg.MaxWatermarkKB << 10,
+	})
 
 	errc := make(chan error, 2)
 	go func() { errc <- internal.Serve(ln) }()

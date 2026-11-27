@@ -164,6 +164,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"runtime/debug"
 	"unsafe"
 
@@ -433,6 +434,20 @@ func joinFrames(frames []*image) (*image, error) {
 	return joined, nil
 }
 
+// loaderMessage matches libvips error lines from a loader, such as
+// "pngload_source: ..." or "jpegload_buffer: ...".
+var loaderMessage = regexp.MustCompile(`(?mi)^\w*load\w*: `)
+
+// encodeError classifies a failed save. libvips decodes lazily, so a
+// broken input often fails only while the output is written; the error
+// then comes from the loader and is a decode error.
+func encodeError(msg string) error {
+	if loaderMessage.MatchString(msg) {
+		return fmt.Errorf("%w: %s", ErrDecode, msg)
+	}
+	return fmt.Errorf("%w: %s", ErrEncode, msg)
+}
+
 // loadBMP decodes a BMP in Go and copies it into libvips. The Go image is
 // garbage once this returns.
 func loadBMP(input []byte, info Info) (*image, error) {
@@ -473,7 +488,7 @@ func encode(im *image, format C.int, conv pipeline.Convert, quality int, keep C.
 	var out unsafe.Pointer
 	var n C.size_t
 	if C.px_save(im.p, opts, &out, &n) != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrEncode, lastError())
+		return nil, encodeError(lastError())
 	}
 	defer C.g_free(C.gpointer(out))
 	return C.GoBytes(out, C.int(n)), nil

@@ -156,3 +156,21 @@ func hasExif(t *testing.T, data []byte) bool {
 	t.Helper()
 	return bytes.Contains(data, []byte("Exif\x00\x00"))
 }
+
+func TestProcessTruncatedInputIsDecodeError(t *testing.T) {
+	in := source(t, ".png")
+	// Keep the header, cut the image data: the error appears while saving.
+	_, err := Process(in[:len(in)/2], parse(t, `{"version":1,"steps":[]}`), ProcessLimits{})
+	if !errors.Is(err, ErrDecode) {
+		t.Errorf("err = %v, want ErrDecode", err)
+	}
+}
+
+func TestEncodeError(t *testing.T) {
+	if err := encodeError("pngload_source: libspng read error\n"); !errors.Is(err, ErrDecode) {
+		t.Errorf("loader message: %v", err)
+	}
+	if err := encodeError("heifsave: encoder failed\n"); !errors.Is(err, ErrEncode) {
+		t.Errorf("saver message: %v", err)
+	}
+}

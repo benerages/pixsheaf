@@ -12,7 +12,7 @@ import (
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	ui := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>Pixsheaf</title>")}}
-	srv := New("127.0.0.1:0", ui, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := New("127.0.0.1:0", ui, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	ts := httptest.NewServer(srv.Handler)
 	t.Cleanup(ts.Close)
 	return ts
