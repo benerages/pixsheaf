@@ -46,6 +46,8 @@ jobs:
         run: go test -race -count=1 -coverprofile=coverage.out ./...
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -n 1
+      - name: Fuzz (15 s per target)
+        run: bash scripts/fuzz.sh 15s
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: staticcheck

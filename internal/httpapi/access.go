@@ -24,13 +24,25 @@ func sameOrigin(r *http.Request) bool {
 		return true
 	}
 	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		// Includes "null" (sandboxed frames, some redirects).
 		return false
 	}
 	// The scheme is not compared: behind a TLS-terminating proxy the
-	// request arrives over HTTP while the page origin is https.
-	return strings.EqualFold(u.Host, r.Host)
+	// request arrives over HTTP while the page origin is https. Host names
+	// are compared case-insensitively in ASCII only; strings.EqualFold
+	// would treat any two invalid UTF-8 bytes as equal.
+	return lowerASCII(u.Host) == lowerASCII(r.Host)
+}
+
+func lowerASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }
 
 // csrf wraps state-changing handlers with the same-origin check.
