@@ -41,9 +41,10 @@ WORKDIR /build
 # renovate: datasource=github-tags depName=DarthSim/quantizr
 ARG QUANTIZR_VERSION=v1.4.3
 ARG QUANTIZR_COMMIT=cfb26aaf3039ac1179d42a66cc7988c8c6feeba9
-RUN fetch-source https://github.com/DarthSim/quantizr.git "$QUANTIZR_VERSION" "$QUANTIZR_COMMIT" quantizr \
- && cd quantizr \
- && cargo cinstall --release --library-type cdylib --prefix /usr/local --libdir /usr/local/lib
+RUN fetch-source https://github.com/DarthSim/quantizr.git "$QUANTIZR_VERSION" "$QUANTIZR_COMMIT" quantizr
+WORKDIR /build/quantizr
+RUN cargo cinstall --release --library-type cdylib --prefix /usr/local --libdir /usr/local/lib
+WORKDIR /build
 
 # GIF encoder.
 # renovate: datasource=github-tags depName=dloebl/cgif
