@@ -22,8 +22,18 @@ docker run --rm \
   -v "$PWD/web:/work" -w /work \
   "$NODE_IMAGE" \
   sh -euc 'npm install --global "$0" >/dev/null
-           /tmp/npm-global/bin/pnpm add --workspace-root --save-dev --save-exact \
-             --store-dir /tmp/pnpm-store "$@"' "$PNPM_PKG" "$@"
+           pnpm=/tmp/npm-global/bin/pnpm
+           # Pass 1: let pnpm pick the newest mature version within each range.
+           $pnpm add --workspace-root --save-dev --store-dir /tmp/pnpm-store "$@"
+           # Pass 2: pnpm keeps a range specifier when one is given, so
+           # re-add each package with its resolved version to pin it exactly.
+           exact=$(node -e "
+             const p = require(\"./package.json\").devDependencies;
+             const names = process.argv.slice(1).map(a => a.replace(/@[^@]*$/, \"\"));
+             console.log(names.map(n => n + \"@\" + p[n].replace(/^[\\^~]/, \"\")).join(\" \"));
+           " "$@")
+           $pnpm add --workspace-root --save-dev --save-exact --store-dir /tmp/pnpm-store $exact' \
+    "$PNPM_PKG" "$@"
 
 echo "Updated web/package.json and web/pnpm-lock.yaml:"
 git --no-pager diff --stat -- web/package.json web/pnpm-lock.yaml || true
