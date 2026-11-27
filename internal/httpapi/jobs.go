@@ -158,7 +158,7 @@ func (a *jobAPI) createJob(w http.ResponseWriter, r *http.Request) {
 		writeBusy(w, codeUnavailable, "the server is shutting down", 10)
 		return
 	}
-	http.SetCookie(w, jobCookie(r, job.ID, token, int(time.Until(job.ExpiresAt).Seconds())))
+	http.SetCookie(w, jobCookie(job.ID, token, int(time.Until(job.ExpiresAt).Seconds())))
 	w.Header().Set("Location", "/api/v1/jobs/"+job.ID)
 	writeJSON(w, http.StatusCreated, api.JobCreated{Job: toAPIJob(job), Token: token})
 }

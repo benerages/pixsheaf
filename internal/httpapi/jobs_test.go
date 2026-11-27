@@ -163,7 +163,7 @@ func TestSingleImageFlow(t *testing.T) {
 			cookie = c
 		}
 	}
-	if cookie == nil || cookie.Value != jc.Token || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode ||
+	if cookie == nil || cookie.Value != jc.Token || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode ||
 		cookie.Path != "/api/v1/jobs/"+jc.Job.Id || cookie.MaxAge < 50 {
 		t.Fatalf("cookie %+v", cookie)
 	}

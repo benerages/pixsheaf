@@ -16,8 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -87,9 +87,11 @@ const (
 
 // Manager holds all jobs. It is safe for concurrent use.
 type Manager struct {
-	dir string
-	lim Limits
-	now func() time.Time
+	// root confines every file operation to dir, so that no blob name can
+	// reach a file outside it.
+	root *os.Root
+	lim  Limits
+	now  func() time.Time
 
 	mu       sync.Mutex
 	jobs     map[string]*job
@@ -124,11 +126,10 @@ type file struct {
 	index    int
 	name     string // uploaded name, for OutputName only
 	status   string
-	input    string // blob path
+	input    string // blob name in Manager.root
 	inBytes  int64
 	inFormat string
-	inInfo   *jobproto.ImageInfo
-	output   string // blob path
+	output   string // blob name in Manager.root
 	out      *jobproto.ImageInfo
 	outBytes int64
 	errCode  string
@@ -146,11 +147,16 @@ func New(dir string, lim Limits) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	if err := clearDir(dir); err != nil {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := clearDir(root); err != nil {
+		_ = root.Close()
 		return nil, err
 	}
 	return &Manager{
-		dir:    dir,
+		root:   root,
 		lim:    lim,
 		now:    time.Now,
 		jobs:   map[string]*job{},
@@ -258,11 +264,11 @@ func (m *Manager) AddFile(id, uploadedName string, r io.Reader) (File, error) {
 		return File{}, err
 	}
 	if _, ok := m.jobs[id]; !ok || j.canceled {
-		_ = os.Remove(path)
+		_ = m.root.Remove(path)
 		return File{}, ErrNotFound
 	}
 	if j.bytes+n > m.lim.MaxJobBytes {
-		_ = os.Remove(path)
+		_ = m.root.Remove(path)
 		return File{}, ErrJobTooLarge
 	}
 	f := &file{
@@ -300,17 +306,18 @@ func (m *Manager) store(r io.Reader) (path string, n int64, format string, err e
 		err = ErrTooLarge
 	}
 	if err != nil {
-		_ = os.Remove(path)
+		_ = m.root.Remove(path)
 		return "", 0, "", err
 	}
 	return path, n, format, nil
 }
 
-// create opens a new blob with a random name, mode 0600.
+// create opens a new blob with a random name, mode 0600, and returns its
+// name.
 func (m *Manager) create() (string, *os.File, error) {
-	path := filepath.Join(m.dir, newID())
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	return path, f, err
+	name := newID()
+	f, err := m.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	return name, f, err
 }
 
 // Task is one file handed to a worker.
@@ -333,7 +340,7 @@ func (m *Manager) Claim(ctx context.Context) (Task, error) {
 		if len(m.queue) > 0 && m.inFlight < m.lim.MaxConcurrency {
 			f := m.queue[0]
 			m.queue = m.queue[1:]
-			in, err := os.Open(f.input)
+			in, err := m.root.Open(f.input)
 			if err != nil {
 				m.failLocked(f, jobproto.CodeInternal, "the upload could not be read")
 				m.mu.Unlock()
@@ -409,13 +416,13 @@ func (m *Manager) Complete(taskID string, resp jobproto.Response, output io.Read
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err != nil {
-		_ = os.Remove(path)
+		_ = m.root.Remove(path)
 		m.failLocked(f, jobproto.CodeInternal, "the result could not be stored")
 		return err
 	}
 	if f.status != FileProcessing || m.jobs[f.job.id] != f.job {
 		// Canceled, deleted, or timed out in the meantime.
-		_ = os.Remove(path)
+		_ = m.root.Remove(path)
 		return nil
 	}
 	m.removeInput(f)
@@ -453,7 +460,7 @@ func (m *Manager) failLocked(f *file, code, msg string) {
 
 func (m *Manager) removeInput(f *file) {
 	if f.input != "" {
-		_ = os.Remove(f.input)
+		_ = m.root.Remove(f.input)
 		f.input = ""
 		m.stored -= f.inBytes
 	}
@@ -461,7 +468,7 @@ func (m *Manager) removeInput(f *file) {
 
 func (m *Manager) removeOutput(f *file) {
 	if f.output != "" {
-		_ = os.Remove(f.output)
+		_ = m.root.Remove(f.output)
 		f.output = ""
 		m.stored -= f.outBytes
 	}
@@ -492,7 +499,7 @@ func (m *Manager) TakeDownload(id string) (Download, error) {
 	if f.status != FileDone {
 		return Download{}, ErrNoResult
 	}
-	out, err := os.Open(f.output)
+	out, err := m.root.Open(f.output)
 	if err != nil {
 		return Download{}, err
 	}
@@ -631,16 +638,16 @@ func (m *Manager) Close() error {
 		m.deleteLocked(j)
 	}
 	m.signal()
-	return clearDir(m.dir)
+	return clearDir(m.root)
 }
 
-func clearDir(dir string) error {
-	entries, err := os.ReadDir(dir)
+func clearDir(root *os.Root) error {
+	entries, err := fs.ReadDir(root.FS(), ".")
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+		if err := root.Remove(e.Name()); err != nil {
 			return err
 		}
 	}

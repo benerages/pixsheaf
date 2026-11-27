@@ -1,3 +1,5 @@
+//go:build vips
+
 package imaging
 
 import (
@@ -49,9 +51,9 @@ func decodeBMP(buf []byte, info Info) (goimage.Image, error) {
 
 func bmpError(err error) error {
 	if errors.Is(err, bmp.ErrUnsupported) {
-		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
-	return fmt.Errorf("%w: %v", ErrDecode, err)
+	return fmt.Errorf("%w: %w", ErrDecode, err)
 }
 
 // encodeBMP writes a BMP. Process flattens transparency first, so the
@@ -60,7 +62,7 @@ func bmpError(err error) error {
 func encodeBMP(img goimage.Image) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := bmp.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrEncode, err)
+		return nil, fmt.Errorf("%w: %w", ErrEncode, err)
 	}
 	return buf.Bytes(), nil
 }

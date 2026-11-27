@@ -79,15 +79,17 @@ func validID(s string) bool {
 }
 
 // jobCookie scopes the token to the job's own paths.
-func jobCookie(r *http.Request, jobID, token string, maxAge int) *http.Cookie {
+func jobCookie(jobID, token string, maxAge int) *http.Cookie {
 	return &http.Cookie{
 		Name:     cookieName,
 		Value:    token,
 		Path:     "/api/v1/jobs/" + jobID,
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		// Behind a TLS-terminating proxy the browser's Origin shows https.
-		Secure:   r.TLS != nil || strings.HasPrefix(r.Header.Get("Origin"), "https://"),
+		// Always Secure: browsers also accept Secure cookies from
+		// http://localhost and 127.0.0.1, and everything else must be
+		// served over TLS (docs/deployment.md).
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	}
 }
