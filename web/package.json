@@ -21,7 +21,7 @@
     "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.65.1",
     "@redocly/cli": "2.82.0",
-    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.2",
     "@tailwindcss/vite": "4.3.5",
     "eslint": "10.14.0",
     "eslint-plugin-svelte": "3.24.1",
