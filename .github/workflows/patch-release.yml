@@ -1,0 +1,50 @@
+# Cuts a patch release once a month when main has changed since the last
+# release. Dependency and base image updates reach users only through a
+# release: the weekly container rebuild tests the images but publishes
+# nothing. scripts/patch-release.sh releases only fixes and updates with
+# every check green; features and breaking changes are left to a person.
+name: patch-release
+
+on:
+  schedule:
+    # 3rd of every month, 05:17 UTC.
+    - cron: "17 5 3 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the decision without tagging
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: patch-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The name is excluded from the check-run test in the script.
+    name: Tag a patch release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the tag
+      actions: write # start release.yml
+      checks: read
+      statuses: read
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide, tag, and start the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: bash scripts/patch-release.sh

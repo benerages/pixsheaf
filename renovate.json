@@ -15,7 +15,8 @@
     "labels": [
       "security"
     ],
-    "minimumReleaseAge": null
+    "minimumReleaseAge": null,
+    "automerge": true
   },
   "packageRules": [
     {
