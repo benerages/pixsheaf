@@ -4,8 +4,10 @@
 # per platform, a GitHub build provenance attestation, and a GitHub release
 # with the changelog and the SBOMs.
 #
-# Push a tag vX.Y.Z to release. Run it by hand (workflow_dispatch) for a
-# dry run: everything is built for both architectures, nothing is pushed.
+# Push a tag vX.Y.Z to release. Run it by hand (workflow_dispatch) on a
+# branch for a dry run: everything is built for both architectures, nothing
+# is pushed. A manual run on a tag is a real release; patch-release.yml
+# starts it that way, because a tag it creates triggers no workflow.
 name: release
 
 on:
@@ -21,7 +23,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
-  PUSH: ${{ github.event_name == 'push' }}
+  PUSH: ${{ github.event_name == 'push' || github.ref_type == 'tag' }}
 
 jobs:
   build:
@@ -86,7 +88,7 @@ jobs:
 
   publish:
     name: Publish ${{ matrix.image }}
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20

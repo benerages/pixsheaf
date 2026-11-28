@@ -46,4 +46,12 @@ CI must be green: Go tests and linters, web lint/check/build, hadolint, zizmor, 
 
 ## Releases
 
-Push a tag `vX.Y.Z` on `main`. The release workflow builds both architectures natively, publishes a signed multi-arch index with SBOM and provenance attestations to GHCR, and creates the GitHub release with the changelog from `scripts/changelog.sh` and a digest-pinned `compose.yaml` from `scripts/release-compose.sh`. Start the workflow by hand first for a dry run that builds everything without publishing.
+Push a tag `vX.Y.Z` on `main`. The release workflow builds both architectures natively, publishes a signed multi-arch index with SBOM and provenance attestations to GHCR, and creates the GitHub release with the changelog from `scripts/changelog.sh` and a digest-pinned `compose.yaml` from `scripts/release-compose.sh`. Start the workflow by hand on `main` first for a dry run that builds everything without publishing.
+
+Patch releases are automatic: on the 3rd of every month `patch-release.yml` runs `scripts/patch-release.sh`, which tags the next `vX.Y.Z+1` and starts the release when `main` has changed since the last tag, the commits are fixes and updates only (no `feat` and no breaking change), and every check on the head commit is green. Features and breaking changes are released by hand. Run the workflow by hand to see its decision; it defaults to a dry run.
+
+## Maintenance
+
+- Renovate opens pull requests for all dependencies; digest updates and security updates merge themselves once CI is green, everything else waits for review.
+- `wolfi-lock.yml` opens a pull request with refreshed Wolfi packages every Monday; review and merge it.
+- `container.yml` rebuilds and scans the images every Monday; a failure usually means a new vulnerability with a fix, whose update pull request is then already open.
