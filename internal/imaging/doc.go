@@ -21,6 +21,10 @@ var ErrDecode = errors.New("imaging: the image could not be decoded")
 // ErrTooManyPixels means that an input or result exceeds a pixel limit.
 var ErrTooManyPixels = errors.New("imaging: too many pixels")
 
+// ErrMemory means that the job ran out of memory: processing the image needs
+// more than the job memory limit (PIXSHEAF_JOB_MEMORY_MB) allows.
+var ErrMemory = errors.New("imaging: the job memory limit was reached")
+
 // ErrEncode means that the output could not be encoded.
 var ErrEncode = errors.New("imaging: the image could not be encoded")
 

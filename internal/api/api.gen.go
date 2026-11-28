@@ -86,6 +86,7 @@ const (
 	EncodeFailed            FileErrorCode = "encode_failed"
 	FormatDisabled          FileErrorCode = "format_disabled"
 	Internal                FileErrorCode = "internal"
+	MemoryLimitExceeded     FileErrorCode = "memory_limit_exceeded"
 	StepNotApplicable       FileErrorCode = "step_not_applicable"
 	TargetSizeUnreachable   FileErrorCode = "target_size_unreachable"
 	Timeout                 FileErrorCode = "timeout"
@@ -110,6 +111,8 @@ func (e FileErrorCode) Valid() bool {
 	case FormatDisabled:
 		return true
 	case Internal:
+		return true
+	case MemoryLimitExceeded:
 		return true
 	case StepNotApplicable:
 		return true
@@ -604,7 +607,7 @@ type FileError struct {
 	// Code Stable machine-readable reason.
 	Code FileErrorCode `json:"code"`
 
-	// Message Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`.
+	// Message Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`. `memory_limit_exceeded` means that processing the image needs more memory than the server allows for one file (operators raise `PIXSHEAF_JOB_MEMORY_MB`); a smaller output size or another format may still work.
 	Message string `json:"message"`
 }
 

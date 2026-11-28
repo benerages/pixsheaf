@@ -39,7 +39,7 @@ func (m *Manager) Stats() Stats {
 var metricCodes = map[string]bool{
 	jobproto.CodeUnsupportedFormat: true, jobproto.CodeFormatDisabled: true, jobproto.CodeTooManyPixels: true,
 	jobproto.CodeTooManyFrames: true, jobproto.CodeDecodeFailed: true,
-	jobproto.CodeEncodeFailed: true, jobproto.CodeStepNotApplicable: true,
+	jobproto.CodeEncodeFailed: true, jobproto.CodeMemoryLimit: true, jobproto.CodeStepNotApplicable: true,
 	jobproto.CodeTargetUnreachable: true, jobproto.CodeTimeout: true,
 	jobproto.CodeTooManyFiles: true, jobproto.CodeArchiveInvalid: true,
 	jobproto.CodeInternal: true, "too_large": true, "archive_entry_unsupported": true,

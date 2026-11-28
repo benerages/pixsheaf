@@ -110,7 +110,7 @@ var settings = map[string]setting{
 		return nil
 	}},
 	"MAX_CONCURRENCY": {"2", intIn(1, 256, func(c *Config, n int) { c.MaxConcurrency = n })},
-	"JOB_MEMORY_MB":   {"384", intIn(64, 65536, func(c *Config, n int) { c.JobMemoryMB = n })},
+	"JOB_MEMORY_MB":   {"1024", intIn(64, 65536, func(c *Config, n int) { c.JobMemoryMB = n })},
 	"MAX_JOB_MB":      {"250", intIn(1, 65536, func(c *Config, n int) { c.MaxJobMB = n })},
 	"MAX_OUTPUT_MB":   {"100", intIn(1, 256, func(c *Config, n int) { c.MaxOutputMB = n })},
 	"MAX_INPUT_PIXELS": {"50000000", intIn(1, 1_000_000_000, func(c *Config, n int) {

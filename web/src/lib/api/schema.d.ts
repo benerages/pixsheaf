@@ -385,8 +385,8 @@ export interface components {
              * @description Stable machine-readable reason.
              * @enum {string}
              */
-            code: "unsupported_format" | "format_disabled" | "too_large" | "too_many_pixels" | "too_many_frames" | "decode_failed" | "encode_failed" | "target_size_unreachable" | "step_not_applicable" | "timeout" | "too_many_files" | "archive_invalid" | "archive_entry_unsupported" | "internal";
-            /** @description Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`. */
+            code: "unsupported_format" | "format_disabled" | "too_large" | "too_many_pixels" | "too_many_frames" | "decode_failed" | "encode_failed" | "memory_limit_exceeded" | "target_size_unreachable" | "step_not_applicable" | "timeout" | "too_many_files" | "archive_invalid" | "archive_entry_unsupported" | "internal";
+            /** @description Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`. `memory_limit_exceeded` means that processing the image needs more memory than the server allows for one file (operators raise `PIXSHEAF_JOB_MEMORY_MB`); a smaller output size or another format may still work. */
             message: string;
         };
         FileUpload: {

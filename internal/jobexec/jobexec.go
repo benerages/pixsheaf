@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/benerages/pixsheaf/internal/imaging"
 	"github.com/benerages/pixsheaf/internal/jobproto"
 )
 
@@ -141,6 +142,11 @@ func (r Runner) Run(ctx context.Context, req jobproto.Request, input []byte) (jo
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return jobproto.Response{}, nil, ErrTimeout
 	}
+	// GLib aborts and the Go runtime throws when an allocation fails, so a
+	// job that reached its memory limit can die without a response.
+	if (readErr != nil || waitErr != nil) && imaging.IsMemoryMessage(stderr.String()) {
+		return jobproto.Response{Error: &jobproto.Error{Code: jobproto.CodeMemoryLimit, Message: memoryLimitMessage}}, nil, nil
+	}
 	if readErr != nil {
 		return jobproto.Response{}, nil, fmt.Errorf("jobexec: reading response: %w%s", readErr, stderr.suffix())
 	}
@@ -171,6 +177,12 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (b *limitedBuffer) suffix() string {

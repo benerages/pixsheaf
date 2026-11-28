@@ -2,7 +2,7 @@
 
 <!-- Generated from api/openapi.yaml by `pnpm gen:docs` (scripts/generate-api.sh). Do not edit by hand; CI fails when it is out of date. -->
 
-**Pixsheaf API** 1.0.0, OpenAPI 3.1.0. Base path: `/api/v1`.
+**Pixsheaf API** 1.0.1, OpenAPI 3.1.0. Base path: `/api/v1`.
 
 The Pixsheaf API processes images with a declarative pipeline. The web UI
 uses this API exclusively.
@@ -468,8 +468,8 @@ Facts about the processed image.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `code` | `string` | yes | Stable machine-readable reason. One of: `unsupported_format`, `format_disabled`, `too_large`, `too_many_pixels`, `too_many_frames`, `decode_failed`, `encode_failed`, `target_size_unreachable`, `step_not_applicable`, `timeout`, `too_many_files`, `archive_invalid`, `archive_entry_unsupported`, `internal`. |
-| `message` | `string` | yes | Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`. |
+| `code` | `string` | yes | Stable machine-readable reason. One of: `unsupported_format`, `format_disabled`, `too_large`, `too_many_pixels`, `too_many_frames`, `decode_failed`, `encode_failed`, `memory_limit_exceeded`, `target_size_unreachable`, `step_not_applicable`, `timeout`, `too_many_files`, `archive_invalid`, `archive_entry_unsupported`, `internal`. |
+| `message` | `string` | yes | Human-readable explanation (English). Never contains file contents or paths. Codes for archives: `too_many_files` (the job or archive would exceed its file limit), `archive_invalid` (not a readable ZIP archive, or above `maxArchiveBytes`), `archive_entry_unsupported` (symbolic link, encrypted entry, or nested archive); entries that are too large or compressed too strongly fail with `too_large`. `memory_limit_exceeded` means that processing the image needs more memory than the server allows for one file (operators raise `PIXSHEAF_JOB_MEMORY_MB`); a smaller output size or another format may still work. |
 
 ### FileUpload
 

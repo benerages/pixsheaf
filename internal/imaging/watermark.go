@@ -7,7 +7,8 @@ package imaging
 #include <vips/vips.h>
 
 static int px_load_overlay(const void *buf, size_t len, VipsImage **out) {
-	*out = vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR, NULL);
+	*out = vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR,
+		"memory", TRUE, NULL); // no temporary file, see px_load
 	return *out ? 0 : -1;
 }
 
