@@ -227,6 +227,8 @@ export interface components {
          */
         OutputFormat: "jpeg" | "png" | "webp" | "gif" | "tiff" | "bmp" | "avif" | "jxl" | "pdf";
         Capabilities: {
+            /** @description Version of the running server, such as `1.1.0`, or `dev` for a local build. The web UI shows it in its footer. */
+            version: string;
             /** @description Highest pipeline version this server accepts. */
             pipelineVersion: number;
             inputFormats: components["schemas"]["InputFormat"][];

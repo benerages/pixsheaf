@@ -162,7 +162,7 @@ func TestSingleImageFlow(t *testing.T) {
 	e := newAPI(t, Options{MaxWatermarkBytes: 1024})
 	resp := e.do(t, "GET", "/api/v1/capabilities", "", "", nil)
 	var caps api.Capabilities
-	if err := json.NewDecoder(resp.Body).Decode(&caps); err != nil || caps.Limits.MaxUploadBytes != 1000 || caps.PipelineVersion != 1 {
+	if err := json.NewDecoder(resp.Body).Decode(&caps); err != nil || caps.Limits.MaxUploadBytes != 1000 || caps.PipelineVersion != 1 || caps.Version == "" {
 		t.Fatalf("capabilities %+v, %v", caps, err)
 	}
 

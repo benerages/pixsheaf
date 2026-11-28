@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pixsheaf API
-  version: 1.0.1
+  version: 1.1.0
   summary: Convert, resize, and optimize images. One image or many.
   description: |
     The Pixsheaf API processes images with a declarative pipeline. The web UI
@@ -661,8 +661,15 @@ components:
     Capabilities:
       type: object
       additionalProperties: false
-      required: [inputFormats, outputFormats, limits, pipelineVersion]
+      required: [version, inputFormats, outputFormats, limits, pipelineVersion]
       properties:
+        version:
+          description: >-
+            Version of the running server, such as `1.1.0`, or `dev` for a
+            local build. The web UI shows it in its footer.
+          type: string
+          minLength: 1
+          maxLength: 64
         pipelineVersion:
           description: Highest pipeline version this server accepts.
           type: integer

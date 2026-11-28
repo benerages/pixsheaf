@@ -528,6 +528,9 @@ type Capabilities struct {
 
 	// PipelineVersion Highest pipeline version this server accepts.
 	PipelineVersion int `json:"pipelineVersion"`
+
+	// Version Version of the running server, such as `1.1.0`, or `dev` for a local build. The web UI shows it in its footer.
+	Version string `json:"version"`
 }
 
 // Condition All given conditions must hold. Dimensions refer to the image as it is when the step runs. Fixed vocabulary, no expressions (ADR 0009).

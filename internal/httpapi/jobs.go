@@ -22,6 +22,7 @@ import (
 	"github.com/benerages/pixsheaf/internal/api"
 	"github.com/benerages/pixsheaf/internal/jobs"
 	"github.com/benerages/pixsheaf/internal/pipeline"
+	"github.com/benerages/pixsheaf/internal/version"
 )
 
 // maxCreateBytes bounds a POST /jobs body: the pipeline with an image
@@ -109,6 +110,7 @@ func (a *jobAPI) capabilities(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, api.Capabilities{
+		Version:         version.Version,
 		InputFormats:    inputs,
 		OutputFormats:   []api.OutputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "jxl", "pdf"},
 		PipelineVersion: pipeline.Version,

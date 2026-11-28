@@ -2,7 +2,7 @@
 
 <!-- Generated from api/openapi.yaml by `pnpm gen:docs` (scripts/generate-api.sh). Do not edit by hand; CI fails when it is out of date. -->
 
-**Pixsheaf API** 1.0.1, OpenAPI 3.1.0. Base path: `/api/v1`.
+**Pixsheaf API** 1.1.0, OpenAPI 3.1.0. Base path: `/api/v1`.
 
 The Pixsheaf API processes images with a declarative pipeline. The web UI
 uses this API exclusively.
@@ -312,6 +312,7 @@ One of: `jpeg`, `png`, `webp`, `gif`, `tiff`, `bmp`, `avif`, `jxl`, `pdf`.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
+| `version` | `string` | yes | Version of the running server, such as `1.1.0`, or `dev` for a local build. The web UI shows it in its footer. |
 | `pipelineVersion` | `integer` | yes | Highest pipeline version this server accepts. |
 | `inputFormats` | array of [`InputFormat`](#inputformat) | yes |  |
 | `outputFormats` | array of [`OutputFormat`](#outputformat) | yes |  |

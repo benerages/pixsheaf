@@ -23,6 +23,10 @@
   html {
     @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
   }
+  /* Keeps the footer at the bottom of short pages. */
+  #app {
+    @apply flex min-h-dvh flex-col;
+  }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-accent-600 dark:outline-accent-300;
   }
