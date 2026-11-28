@@ -74,6 +74,36 @@ export const defaultSettings: Settings = {
   watermarkOpacity: 0.5,
 };
 
+/** Width and height of an image in pixels. */
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** The suggested percentage when the percent mode is chosen. */
+export const defaultResizePercent = 50;
+
+/**
+ * The value suggested when a resize mode is chosen: half the size in percent
+ * mode, otherwise the matching dimension of the source image, so the user
+ * starts from the original instead of an arbitrary number. Without a known
+ * source size, the pixel modes fall back to the default value.
+ */
+export function suggestResizeValue(mode: ResizeMode, source: Size | null): number {
+  switch (mode) {
+    case "percent":
+      return defaultResizePercent;
+    case "width":
+      return source?.width ?? defaultSettings.resizeValue;
+    case "height":
+      return source?.height ?? defaultSettings.resizeValue;
+    case "longest":
+      return source ? Math.max(source.width, source.height) : defaultSettings.resizeValue;
+    default:
+      return defaultSettings.resizeValue;
+  }
+}
+
 type Step = Pipeline["steps"][number];
 
 function encoderParams(s: Settings, format: OutputFormat): Record<string, unknown> {

@@ -58,6 +58,20 @@
     return () => clearTimeout(timer);
   });
 
+  // The previewed image's size drives the resize suggestions (see SingleView).
+  // The size is kept with its URL, so a newly selected image never inherits
+  // the previous one's size.
+  let loaded = $state<{ url: string; size: [number, number] } | null>(null);
+  const beforeSize = $derived(loaded?.url === previewUrl ? loaded.size : null);
+  $effect(() => {
+    const input = preview.input;
+    editor.source = beforeSize
+      ? { width: beforeSize[0], height: beforeSize[1] }
+      : input?.width && input.height
+        ? { width: input.width, height: input.height }
+        : null;
+  });
+
   const locale = $derived(numberLocale());
 
   // Name example for the previewed file, with its real output size.
@@ -114,6 +128,7 @@
           after={preview.url}
           afterFormat={preview.output?.format ?? ""}
           working={preview.state === "working"}
+          onbeforesize={(w, h) => (loaded = { url: previewUrl, size: [w, h] })}
         />
         {#if preview.state === "error"}
           <p class="text-sm text-red-700 dark:text-red-400" role="alert">

@@ -2,7 +2,7 @@
 
 <!-- Generated from api/openapi.yaml by `pnpm gen:docs` (scripts/generate-api.sh). Do not edit by hand; CI fails when it is out of date. -->
 
-**Pixsheaf API** 1.1.0, OpenAPI 3.1.0. Base path: `/api/v1`.
+**Pixsheaf API** 1.1.1, OpenAPI 3.1.0. Base path: `/api/v1`.
 
 The Pixsheaf API processes images with a declarative pipeline. The web UI
 uses this API exclusively.
