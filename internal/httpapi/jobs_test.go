@@ -32,21 +32,35 @@ type apiEnv struct {
 	dir string
 }
 
-func newAPI(t *testing.T, opts Options) *apiEnv {
+// newAPI starts a test server; an optional logger replaces the silent one.
+func newAPI(t *testing.T, opts Options, logger ...*slog.Logger) *apiEnv {
+	return newAPIWith(t, opts, nil, logger...)
+}
+
+// newAPIWith starts a test server with job limits changed by limits.
+func newAPIWith(t *testing.T, opts Options, limits func(*jobs.Limits), logger ...*slog.Logger) *apiEnv {
 	t.Helper()
 	dir := t.TempDir()
-	m, err := jobs.New(dir, jobs.Limits{
+	lim := jobs.Limits{
 		MaxUploadBytes: 1000, MaxJobBytes: 5000, MaxFiles: 10, MaxOutputBytes: 1000,
 		MaxInputPixels: 100, MaxOutputPixels: 100, MaxFrames: 2,
 		MaxConcurrency: 1, MaxQueued: 10, MaxJobs: 10, MaxJobsPerClient: 5, MaxStoredBytes: 1 << 20,
 		TTL: time.Minute, LeaseTimeout: time.Minute,
-	})
+	}
+	if limits != nil {
+		limits(&lim)
+	}
+	m, err := jobs.New(dir, lim)
 	if err != nil {
 		t.Fatal(err)
 	}
 	opts.Jobs = m
 	ui := fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}
-	ts := httptest.NewServer(New("127.0.0.1:0", ui, slog.New(slog.NewTextHandler(io.Discard, nil)), opts).Handler)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if len(logger) > 0 {
+		log = logger[0]
+	}
+	ts := httptest.NewServer(New("127.0.0.1:0", ui, log, opts).Handler)
 	t.Cleanup(func() {
 		ts.Close()
 		_ = m.Close()
@@ -122,7 +136,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 func problemCode(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	var p api.Problem
-	if ct := resp.Header.Get("Content-Type"); ct != "application/problem+json" {
+	if ct := resp.Header.Get("Content-Type"); ct != "application/problem+json; charset=utf-8" {
 		t.Fatalf("content type %q for status %d", ct, resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
@@ -159,12 +173,12 @@ func TestSingleImageFlow(t *testing.T) {
 	}
 	var cookie *http.Cookie
 	for _, c := range resp.Cookies() {
-		if c.Name == cookieName {
+		if c.Name == cookiePrefix+jc.Job.Id {
 			cookie = c
 		}
 	}
 	if cookie == nil || cookie.Value != jc.Token || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode ||
-		cookie.Path != "/api/v1/jobs/"+jc.Job.Id || cookie.MaxAge < 50 {
+		cookie.Path != "/" || cookie.MaxAge < 50 {
 		t.Fatalf("cookie %+v", cookie)
 	}
 
@@ -184,7 +198,7 @@ func TestSingleImageFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = evResp.Body.Close() }()
-	if evResp.Header.Get("Content-Type") != "text/event-stream" {
+	if evResp.Header.Get("Content-Type") != "text/event-stream; charset=utf-8" {
 		t.Fatalf("events: %d %s", evResp.StatusCode, evResp.Header.Get("Content-Type"))
 	}
 	done := make(chan []string)
@@ -240,7 +254,7 @@ func TestJobAccess(t *testing.T) {
 	e := newAPI(t, Options{})
 	jc, _ := e.create(t, emptyPipeline, 1)
 	path := "/api/v1/jobs/" + jc.Job.Id
-	cookie := "pixsheaf_job=" + jc.Token
+	cookie := cookiePrefix + jc.Job.Id + "=" + jc.Token
 
 	expect(t, e.do(t, "GET", path, "", "", nil), http.StatusUnauthorized, codeUnauthorized)
 	expect(t, e.do(t, "GET", path, "wrong", "", nil), http.StatusUnauthorized, codeUnauthorized)
@@ -249,6 +263,12 @@ func TestJobAccess(t *testing.T) {
 	expect(t, e.do(t, "DELETE", path, "", "", nil, "Cookie", cookie), http.StatusUnauthorized, codeUnauthorized)
 	expect(t, e.upload(t, jc.Job.Id, "", "a.png", pngHeader, "Cookie", cookie), http.StatusUnauthorized, codeUnauthorized)
 	expect(t, e.do(t, "GET", path+"/download", "", "", nil, "Cookie", cookie), http.StatusConflict, codeJobNotDone)
+	// The cookie of another job does not open this one.
+	other, _ := e.create(t, emptyPipeline, 1)
+	foreign := cookiePrefix + jc.Job.Id + "=" + other.Token
+	expect(t, e.do(t, "GET", path+"/download", "", "", nil, "Cookie", foreign), http.StatusUnauthorized, codeUnauthorized)
+	misnamed := cookiePrefix + other.Job.Id + "=" + jc.Token
+	expect(t, e.do(t, "GET", path+"/download", "", "", nil, "Cookie", misnamed), http.StatusUnauthorized, codeUnauthorized)
 
 	expect(t, e.do(t, "GET", "/api/v1/jobs/AAAAAAAAAAAAAAAAAAAAAA", jc.Token, "", nil), http.StatusNotFound, codeNotFound)
 	expect(t, e.do(t, "GET", "/api/v1/jobs/..%2f..", jc.Token, "", nil), http.StatusNotFound, "")
@@ -319,6 +339,11 @@ func TestUploadRejected(t *testing.T) {
 	e := newAPI(t, Options{})
 	jc, _ := e.create(t, emptyPipeline, 1)
 	expect(t, e.upload(t, jc.Job.Id, jc.Token, "a.svg", []byte("<svg/>")), http.StatusUnsupportedMediaType, codeUnsupportedFormat)
+	// A PNG with a name that is not an image file name is refused too
+	// (ASVS 5.0 5.2.2, ADR 0023).
+	for _, name := range []string{"a.txt", "a", "a.png.php", ""} {
+		expect(t, e.upload(t, jc.Job.Id, jc.Token, name, pngHeader), http.StatusUnsupportedMediaType, codeUnsupportedFormat)
+	}
 	expect(t, e.upload(t, jc.Job.Id, jc.Token, "a.png", append(bytes.Clone(pngHeader), make([]byte, 2000)...)), http.StatusRequestEntityTooLarge, codeFileTooLarge)
 	expect(t, e.do(t, "POST", "/api/v1/jobs/"+jc.Job.Id+"/files", jc.Token, "image/png", bytes.NewReader(pngHeader)), http.StatusUnsupportedMediaType, codeUnsupportedMedia)
 
@@ -371,4 +396,20 @@ func TestContentDisposition(t *testing.T) {
 			t.Errorf("contentDisposition(%q) = %s, want %s", in, got, want)
 		}
 	}
+}
+
+func TestDisabledFormat(t *testing.T) {
+	e := newAPIWith(t, Options{}, func(l *jobs.Limits) { l.DisabledFormats = []string{"heif", "zip"} })
+	resp := e.do(t, "GET", "/api/v1/capabilities", "", "", nil)
+	var caps api.Capabilities
+	_ = json.NewDecoder(resp.Body).Decode(&caps)
+	for _, f := range caps.InputFormats {
+		if f == "heif" || f == "zip" {
+			t.Errorf("capabilities list disabled format %q", f)
+		}
+	}
+	jc, _ := e.create(t, emptyPipeline, 1)
+	heic := []byte("\x00\x00\x00\x18ftypheic")
+	expect(t, e.upload(t, jc.Job.Id, jc.Token, "a.heic", heic), http.StatusUnsupportedMediaType, codeFormatDisabled)
+	expect(t, e.upload(t, jc.Job.Id, jc.Token, "a.png", pngHeader), http.StatusCreated, "")
 }

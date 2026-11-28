@@ -29,8 +29,8 @@ Unknown `PIXSHEAF_*` variables are rejected at startup, so a typo cannot silentl
 | `PIXSHEAF_MAX_ARCHIVE_MB` | `100` | 1–32768, at most half of `PIXSHEAF_JOB_MEMORY_MB` | Size of one uploaded ZIP archive. The archive is unpacked in a job process that holds it in memory. |
 | `PIXSHEAF_MAX_ARCHIVE_ENTRIES` | `1000` | 1–100000 | Entries (files and folders) in one ZIP archive. |
 | `PIXSHEAF_TRUSTED_PROXIES` | empty | comma-separated CIDR prefixes | Reverse proxies whose `X-Forwarded-For` header is trusted. Empty: the header is ignored. |
-| `PIXSHEAF_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` | Minimum log level. Logs never contain file contents, original file names, or plaintext IP addresses. |
+| `PIXSHEAF_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` | Minimum log level. Rejected API requests are logged at `info`, security events (wrong token, cross-origin request, rate limit) at `warn`, successful requests only at `debug`. Logs never contain file contents, original file names, tokens, or plaintext IP addresses; clients appear as a short pseudonymous key that changes on every restart. |
+| `PIXSHEAF_METRICS_ADDR` | empty (off) | empty or `host:port` | Address of the Prometheus endpoint `GET /metrics` (job, queue, and storage gauges; processed and failed files; responses by status class; security events). It carries no personal data, but keep it off the internet: publish it only on an internal network, for example `:9464` inside the container without a `ports:` entry. |
 
 `compose.yaml` additionally reads `IMAGE_TAG` (default `latest`) to select the image version. It is deliberately not a `PIXSHEAF_*` variable.
 
-Settings for rate limits, job lifetime, pixel limits, and disabled formats (`PIXSHEAF_DISABLE_FORMATS`, ADR 0016) are added with the features that use them in Phases 3 and 4.

@@ -56,6 +56,10 @@ type Request struct {
 	MaxFiles      int   `json:"maxFiles,omitempty"`
 	MaxEntryBytes int64 `json:"maxEntryBytes,omitempty"`
 	MaxTotalBytes int64 `json:"maxTotalBytes,omitempty"`
+	// DisabledFormats are input formats the operator disabled
+	// (PIXSHEAF_DISABLE_FORMATS, ADR 0016); the job process refuses them
+	// and keeps their loaders blocked.
+	DisabledFormats []string `json:"disabledFormats,omitempty"`
 	// Pipeline is the pipeline document for OpProcess (api/openapi.yaml).
 	// The job process validates it again.
 	Pipeline json.RawMessage `json:"pipeline,omitempty"`
@@ -76,6 +80,7 @@ type Response struct {
 // Error codes match the API's FileError codes (api/openapi.yaml).
 const (
 	CodeUnsupportedFormat = "unsupported_format"
+	CodeFormatDisabled    = "format_disabled"
 	CodeTooManyPixels     = "too_many_pixels"
 	CodeTooManyFrames     = "too_many_frames"
 	CodeDecodeFailed      = "decode_failed"

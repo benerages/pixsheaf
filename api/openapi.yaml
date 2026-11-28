@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pixsheaf API
-  version: 1.0.0-dev
+  version: 1.0.0
   summary: Convert, resize, and optimize images. One image or many.
   description: |
     The Pixsheaf API processes images with a declarative pipeline. The web UI
@@ -39,11 +39,14 @@ info:
 
     - as `Authorization: Bearer <token>` (required for all requests that
       change state), or
-    - as the `pixsheaf_job` cookie, which the server sets on job creation
-      (`HttpOnly; SameSite=Strict; Path=/api/v1/jobs/{jobId}`). The cookie is
-      accepted only for `GET /jobs/{jobId}/events` and
-      `GET /jobs/{jobId}/download`, so that browsers can use `EventSource`
-      and plain download links.
+    - as the `__Host-pixsheaf-{jobId}` cookie, which the server sets on job
+      creation (`Secure; HttpOnly; SameSite=Strict; Path=/`). The job ID in
+      the name binds the cookie to its job, so a browser can hold several
+      jobs at once; the `__Host-` prefix keeps other hosts from setting it.
+      The cookie is accepted only for `GET /jobs/{jobId}/events`,
+      `GET /jobs/{jobId}/download`, and
+      `GET /jobs/{jobId}/files/{fileId}/download`, so that browsers can use
+      `EventSource` and plain download links.
 
     The job ID alone grants nothing. State-changing requests are also
     rejected when `Sec-Fetch-Site` is `cross-site` or `same-site`, or when
@@ -138,8 +141,8 @@ paths:
       summary: Create a job
       description: >-
         Creates a job with a validated pipeline. The response body contains
-        the job token; the server also sets it as the `pixsheaf_job` cookie
-        for this job's path.
+        the job token; the server also sets it as the
+        `__Host-pixsheaf-{jobId}` cookie.
       security: []
       requestBody:
         required: true
@@ -157,9 +160,10 @@ paths:
                 type: string
             Set-Cookie:
               description: >-
-                `pixsheaf_job=<token>; Path=/api/v1/jobs/<jobId>; HttpOnly;
-                SameSite=Strict; Max-Age=<seconds until expiry>`, plus
-                `Secure` when the request arrived over TLS.
+                `__Host-pixsheaf-<jobId>=<token>; Path=/; Max-Age=<seconds
+                until expiry>; HttpOnly; Secure; SameSite=Strict`. Browsers
+                accept `Secure` cookies from `http://localhost` and
+                `127.0.0.1`; any other address must be served over TLS.
               schema:
                 type: string
             Cache-Control:
@@ -237,7 +241,15 @@ paths:
         Uploads one image or one ZIP archive as a multipart form with a
         single part named `file`. The type is detected from the content
         (magic bytes); the part's `Content-Type` and file name are not used
-        for that decision (ADR 0014). The file name may contain a relative
+        for that decision (ADR 0014). The file name must still end in an
+        image extension (`.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.png`, `.webp`,
+        `.avif`, `.gif`, `.tif`, `.tiff`, `.bmp`, `.jxl`, `.heic`, `.heif`,
+        `.hif`) or in `.zip`, compared case-insensitively; otherwise the
+        upload gets 415 `unsupported_format` (ADR 0023). An extension that
+        does not match the content is accepted, because the content decides
+        and every output is a new encode. Formats the operator disabled
+        (`PIXSHEAF_DISABLE_FORMATS`, ADR 0016) get 415 `format_disabled` and
+        are missing from `GET /capabilities`. The file name may contain a relative
         folder path (folder uploads); it is kept in memory only, to build the
         output name and the folder structure of the ZIP download, and it is
         never logged. Processing starts immediately.
@@ -247,9 +259,10 @@ paths:
         `maxArchiveBytes` and `maxArchiveEntries` and the job's file and size
         limits; each image entry then becomes a file of kind `image` with
         `archiveId` set. Directories are skipped; symbolic links, encrypted
-        entries, nested archives, and entries that are too large or
-        compressed too strongly become failed files with a reason, so they
-        appear in the report.
+        entries, nested archives, entries without an image extension or in a
+        disabled format, and entries that are too large or compressed too
+        strongly become failed files with a reason, so they appear in the
+        report.
       security:
         - jobToken: []
       requestBody:
@@ -354,7 +367,7 @@ paths:
         files of a batch. Available once the file is `done`. The result can
         be downloaded once; afterwards it is deleted, the file shows
         `downloaded: true`, and the job's ZIP download leaves it out (the
-        report still lists it). The `pixsheaf_job` cookie is accepted here.
+        report still lists it). The job cookie is accepted here.
       security:
         - jobToken: []
         - jobCookie: []
@@ -398,7 +411,7 @@ paths:
         The first events describe the current state, so a client that
         reconnects needs no other request. The stream ends after the job
         reaches `done` or `canceled`. Comment lines (`: ping`) keep the
-        connection open. The `pixsheaf_job` cookie is accepted here.
+        connection open. The job cookie is accepted here.
       security:
         - jobToken: []
         - jobCookie: []
@@ -436,7 +449,7 @@ paths:
         as ` (2)`. Available once the job is `done`. After the download the
         job and its data are deleted; a second request returns 404. Original
         bytes are never returned; every output is a new encode (ADR 0014).
-        The `pixsheaf_job` cookie is accepted here.
+        The job cookie is accepted here.
       security:
         - jobToken: []
         - jobCookie: []
@@ -499,10 +512,10 @@ components:
     jobCookie:
       type: apiKey
       in: cookie
-      name: pixsheaf_job
+      name: __Host-pixsheaf-{jobId}
       description: >-
-        Set by `createJob`, scoped to the job's path. Accepted only for the
-        event stream and the download.
+        Set by `createJob`; the name ends with the job ID. Accepted only for
+        the event stream and the downloads.
 
   parameters:
     JobId:
@@ -574,7 +587,9 @@ components:
     UnsupportedMediaType:
       description: >-
         The request body or the uploaded file has a type that is not allowed
-        (ADR 0014).
+        (`unsupported_media_type`, `unsupported_format`; ADR 0014, ADR 0023),
+        or the operator disabled the file's format (`format_disabled`,
+        ADR 0016).
       content:
         application/problem+json:
           schema:

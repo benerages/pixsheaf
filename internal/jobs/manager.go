@@ -28,20 +28,22 @@ import (
 
 // Errors returned by Manager. The HTTP layer maps them to problem codes.
 var (
-	ErrNotFound      = errors.New("jobs: not found")
-	ErrUnauthorized  = errors.New("jobs: wrong or missing job token")
-	ErrNotOpen       = errors.New("jobs: the job accepts no more uploads")
-	ErrTooLarge      = errors.New("jobs: file too large")
-	ErrJobTooLarge   = errors.New("jobs: job too large")
-	ErrUnsupported   = errors.New("jobs: not an allowed image format")
-	ErrBusy          = errors.New("jobs: the queue is full")
-	ErrNotReady      = errors.New("jobs: the job is not done")
-	ErrNoResult      = errors.New("jobs: the job has no result")
-	ErrUnknownTask   = errors.New("jobs: unknown or expired task")
-	ErrInvalidResult = errors.New("jobs: invalid result from worker")
-	ErrTooManyJobs   = errors.New("jobs: too many open jobs")
-	ErrShuttingDown  = errors.New("jobs: shutting down")
-	ErrClientJobs    = errors.New("jobs: too many open jobs for this client")
+	ErrNotFound     = errors.New("jobs: not found")
+	ErrUnauthorized = errors.New("jobs: wrong or missing job token")
+	ErrNotOpen      = errors.New("jobs: the job accepts no more uploads")
+	ErrTooLarge     = errors.New("jobs: file too large")
+	ErrJobTooLarge  = errors.New("jobs: job too large")
+	ErrUnsupported  = errors.New("jobs: not an allowed image format")
+	// ErrFormatDisabled: the operator disabled the upload's format.
+	ErrFormatDisabled = errors.New("jobs: the format is disabled on this server")
+	ErrBusy           = errors.New("jobs: the queue is full")
+	ErrNotReady       = errors.New("jobs: the job is not done")
+	ErrNoResult       = errors.New("jobs: the job has no result")
+	ErrUnknownTask    = errors.New("jobs: unknown or expired task")
+	ErrInvalidResult  = errors.New("jobs: invalid result from worker")
+	ErrTooManyJobs    = errors.New("jobs: too many open jobs")
+	ErrShuttingDown   = errors.New("jobs: shutting down")
+	ErrClientJobs     = errors.New("jobs: too many open jobs for this client")
 )
 
 // Limits are the operator limits enforced by the Manager.
@@ -66,6 +68,9 @@ type Limits struct {
 	// MaxArchiveBytes and MaxArchiveEntries bound one ZIP upload.
 	MaxArchiveBytes   int64
 	MaxArchiveEntries int
+	// DisabledFormats are refused input formats (PIXSHEAF_DISABLE_FORMATS,
+	// ADR 0016), as named by Sniff.
+	DisabledFormats []string
 	// MaxStoredBytes bounds all stored uploads and results together. It
 	// must stay below the size of the tmpfs, so that a full disk shows up
 	// as ErrBusy (503 with Retry-After) instead of a failed upload.
@@ -112,6 +117,9 @@ type Manager struct {
 	reserved int64
 	wake     chan struct{}
 	closed   bool
+	// Counters for the metrics endpoint (Stats).
+	filesDone   uint64
+	filesFailed map[string]uint64
 }
 
 type job struct {
@@ -177,14 +185,15 @@ func New(dir string, lim Limits) (*Manager, error) {
 		return nil, err
 	}
 	return &Manager{
-		root:       root,
-		lim:        lim,
-		now:        time.Now,
-		jobs:       map[string]*job{},
-		leases:     map[string]*lease{},
-		queue:      newFairQueue(),
-		clientJobs: map[string]int{},
-		wake:       make(chan struct{}),
+		root:        root,
+		lim:         lim,
+		now:         time.Now,
+		jobs:        map[string]*job{},
+		leases:      map[string]*lease{},
+		queue:       newFairQueue(),
+		clientJobs:  map[string]int{},
+		wake:        make(chan struct{}),
+		filesFailed: map[string]uint64{},
 	}, nil
 }
 
@@ -331,6 +340,9 @@ func (m *Manager) store(r io.Reader) (path string, n int64, format string, err e
 	if format = Sniff(head); format == "" {
 		return "", 0, "", ErrUnsupported
 	}
+	if m.formatDisabled(format) {
+		return "", 0, "", ErrFormatDisabled
+	}
 	path, w, err := m.create()
 	if err != nil {
 		return "", 0, "", err
@@ -397,6 +409,7 @@ func (m *Manager) Claim(ctx context.Context) (Task, error) {
 				MaxPixels:       m.lim.MaxInputPixels,
 				MaxOutputPixels: m.lim.MaxOutputPixels,
 				MaxFrames:       m.lim.MaxFrames,
+				DisabledFormats: m.lim.DisabledFormats,
 				Pipeline:        f.job.pipeline,
 			}
 			if f.kind == KindArchive {
@@ -485,6 +498,7 @@ func (m *Manager) Complete(taskID string, resp jobproto.Response, output io.Read
 	}
 	m.removeInput(f)
 	f.status = FileDone
+	m.filesDone++
 	f.output, f.out, f.outBytes = path, resp.Output, n
 	m.stored += n
 	m.signal()
@@ -513,6 +527,7 @@ func (m *Manager) failLocked(f *file, code, msg string) {
 	}
 	m.removeInput(f)
 	f.status, f.errCode, f.errMsg = FileFailed, code, msg
+	m.filesFailed[metricCode(code)]++
 	m.signal()
 }
 
@@ -821,4 +836,14 @@ func clearDir(root *os.Root) error {
 		}
 	}
 	return nil
+}
+
+// formatDisabled reports whether the operator disabled format.
+func (m *Manager) formatDisabled(format string) bool {
+	for _, f := range m.lim.DisabledFormats {
+		if f == format {
+			return true
+		}
+	}
+	return false
 }

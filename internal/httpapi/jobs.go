@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,8 @@ type Options struct {
 	// RequestsPerMinute limits API requests per client; 0 disables the
 	// limit (tests only).
 	RequestsPerMinute int
+	// Requests, if set, counts API responses for the metrics endpoint.
+	Requests *RequestStats
 }
 
 type jobAPI struct {
@@ -80,7 +83,7 @@ func (a *jobAPI) withJob(allowCookie bool, next func(http.ResponseWriter, *http.
 			writeProblem(w, http.StatusNotFound, codeNotFound, "")
 			return
 		}
-		switch err := a.m.Authorize(id, requestToken(r, allowCookie)); {
+		switch err := a.m.Authorize(id, requestToken(r, id, allowCookie)); {
 		case errors.Is(err, jobs.ErrNotFound):
 			writeProblem(w, http.StatusNotFound, codeNotFound, "")
 			return
@@ -99,8 +102,14 @@ func (a *jobAPI) capabilities(w http.ResponseWriter, _ *http.Request) {
 	if a.opts.MaxSteps > 0 && a.opts.MaxSteps < maxSteps {
 		maxSteps = a.opts.MaxSteps
 	}
+	inputs := make([]api.InputFormat, 0, 10)
+	for _, f := range []api.InputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "heif", "jxl", "zip"} {
+		if !slices.Contains(lim.DisabledFormats, string(f)) {
+			inputs = append(inputs, f)
+		}
+	}
 	writeJSON(w, http.StatusOK, api.Capabilities{
-		InputFormats:    []api.InputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "heif", "jxl", "zip"},
+		InputFormats:    inputs,
 		OutputFormats:   []api.OutputFormat{"jpeg", "png", "webp", "gif", "tiff", "bmp", "avif", "jxl", "pdf"},
 		PipelineVersion: pipeline.Version,
 		Limits: api.Limits{
@@ -264,7 +273,13 @@ func (a *jobAPI) uploadFile(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	defer func() { _ = part.Close() }()
 
-	f, err := a.m.AddFile(id, uploadName(part), part)
+	name := uploadName(part)
+	if !jobs.AllowedExtension(name) {
+		writeProblem(w, http.StatusUnsupportedMediaType, codeUnsupportedFormat,
+			"the file name must end in an image extension such as .jpg or .png, or in .zip")
+		return
+	}
+	f, err := a.m.AddFile(id, name, part)
 	var mbe *http.MaxBytesError
 	switch {
 	case err == nil:
@@ -277,6 +292,9 @@ func (a *jobAPI) uploadFile(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	case errors.Is(err, jobs.ErrUnsupported):
 		writeProblem(w, http.StatusUnsupportedMediaType, codeUnsupportedFormat, "the file is not an allowed image format")
+		return
+	case errors.Is(err, jobs.ErrFormatDisabled):
+		writeProblem(w, http.StatusUnsupportedMediaType, codeFormatDisabled, "this image format is disabled on this server")
 		return
 	case errors.Is(err, jobs.ErrNotOpen):
 		writeProblem(w, http.StatusConflict, codeJobNotOpen, "the job accepts no more files")
@@ -489,7 +507,7 @@ func toReport(d jobs.Download) api.Report {
 func (a *jobAPI) events(w http.ResponseWriter, r *http.Request, id string) {
 	rc := http.NewResponseController(w)
 	h := w.Header()
-	h.Set("Content-Type", "text/event-stream")
+	h.Set("Content-Type", "text/event-stream; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)

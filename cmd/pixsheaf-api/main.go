@@ -78,16 +78,24 @@ func serve() int {
 		return 1
 	}
 	internal := transport.NewServer(manager)
+	requests := &httpapi.RequestStats{}
 	public := httpapi.New(cfg.ListenAddr, ui.FS(), logger, httpapi.Options{
 		Jobs:              manager,
 		MaxWatermarkBytes: cfg.MaxWatermarkKB << 10,
 		TrustedProxies:    cfg.TrustedProxies,
 		RequestsPerMinute: cfg.RequestsPerMinute,
+		Requests:          requests,
 	})
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 3)
 	go func() { errc <- internal.Serve(ln) }()
 	go func() { errc <- public.ListenAndServe() }()
+	var metrics *http.Server
+	if cfg.MetricsAddr != "" {
+		metrics = httpapi.NewMetrics(cfg.MetricsAddr, manager, requests)
+		go func() { errc <- metrics.ListenAndServe() }()
+		logger.Info("metrics enabled", "listen", cfg.MetricsAddr)
+	}
 	logger.Info("started", "version", version.Version, "listen", cfg.ListenAddr, "socket", cfg.SocketPath)
 
 	select {
@@ -102,6 +110,9 @@ func serve() int {
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	_ = public.Shutdown(sctx)
+	if metrics != nil {
+		_ = metrics.Shutdown(sctx)
+	}
 	// Closing the manager ends the workers' long polls, so the internal
 	// server can shut down without waiting for them. Results of files that
 	// are still running are lost with the in-memory jobs anyway.
@@ -127,6 +138,7 @@ func jobLimits(cfg config.Config) jobs.Limits {
 		MaxJobsPerClient:  cfg.MaxJobsPerClient,
 		MaxArchiveBytes:   int64(cfg.MaxArchiveMB) << 20,
 		MaxArchiveEntries: cfg.MaxArchiveEntries,
+		DisabledFormats:   cfg.DisabledFormats,
 		TTL:               cfg.JobTTL,
 		LeaseTimeout:      cfg.JobTimeout + transferAllowance,
 	}

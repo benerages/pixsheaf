@@ -331,3 +331,32 @@ func TestInvalidWorkerResult(t *testing.T) {
 		t.Errorf("%d blobs left, want 0", n)
 	}
 }
+
+func TestDisabledFormats(t *testing.T) {
+	dir := t.TempDir()
+	lim := testLimits()
+	lim.DisabledFormats = []string{"heif"}
+	m, err := New(dir, lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	j, _, _ := m.Create([]byte(`{}`), 2, Naming{}, "client")
+	if _, err := m.AddFile(j.ID, "a.heic", strings.NewReader("\x00\x00\x00\x18ftypheic")); !errors.Is(err, ErrFormatDisabled) {
+		t.Errorf("heic: err = %v", err)
+	}
+	// AVIF shares the HEIF container but is not disabled.
+	if _, err := m.AddFile(j.ID, "a.avif", strings.NewReader("\x00\x00\x00\x1cftypavif")); err != nil {
+		t.Errorf("avif: %v", err)
+	}
+	if n := countFiles(t, dir); n != 1 {
+		t.Errorf("%d blobs, want 1", n)
+	}
+	// The worker receives the list, so that it refuses the format too.
+	if task := claimTask(t, m); len(task.Request.DisabledFormats) != 1 || task.Request.DisabledFormats[0] != "heif" {
+		t.Errorf("request %+v", task.Request)
+	}
+	if s := m.Stats(); s.Jobs != 1 || s.InFlight != 1 {
+		t.Errorf("stats %+v", s)
+	}
+}

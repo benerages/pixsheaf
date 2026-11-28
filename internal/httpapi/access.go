@@ -8,7 +8,11 @@ import (
 
 // Job access and CSRF protection (ADR 0019).
 
-const cookieName = "pixsheaf_job"
+// cookiePrefix starts the name of a job cookie; the job ID completes it.
+// "__Host-" makes browsers require Secure and Path=/ and reject the cookie
+// from other hosts (ASVS 5.0 3.3.1, 3.3.3); the ID in the name keeps the
+// cookies of parallel jobs apart.
+const cookiePrefix = "__Host-pixsheaf-"
 
 // sameOrigin rejects state-changing requests from other sites: by
 // Sec-Fetch-Site where the browser sends it, and by Origin otherwise.
@@ -57,8 +61,8 @@ func csrf(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // requestToken returns the job token from the Authorization header, or,
-// if allowCookie is set, from the job cookie.
-func requestToken(r *http.Request, allowCookie bool) string {
+// if allowCookie is set, from the cookie of job jobID.
+func requestToken(r *http.Request, jobID string, allowCookie bool) string {
 	if h := r.Header.Get("Authorization"); h != "" {
 		scheme, token, ok := strings.Cut(h, " ")
 		if ok && strings.EqualFold(scheme, "Bearer") {
@@ -67,7 +71,7 @@ func requestToken(r *http.Request, allowCookie bool) string {
 		return ""
 	}
 	if allowCookie {
-		if c, err := r.Cookie(cookieName); err == nil {
+		if c, err := r.Cookie(cookiePrefix + jobID); err == nil {
 			return c.Value
 		}
 	}
@@ -90,12 +94,13 @@ func validID(s string) bool {
 	return true
 }
 
-// jobCookie scopes the token to the job's own paths.
+// jobCookie carries the token of one job for EventSource and download
+// links.
 func jobCookie(jobID, token string, maxAge int) *http.Cookie {
 	return &http.Cookie{
-		Name:     cookieName,
+		Name:     cookiePrefix + jobID,
 		Value:    token,
-		Path:     "/api/v1/jobs/" + jobID,
+		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		// Always Secure: browsers also accept Secure cookies from

@@ -16,7 +16,7 @@ Jobs are anonymous (ADR 0015). Job IDs appear in URLs, so they can end up in bro
 - `POST /api/v1/jobs` returns the job and a secret **job token** (256 bits from `crypto/rand`, base64url). Job and file IDs have 128 bits.
 - Every request for a job needs the token. It is accepted:
   - as `Authorization: Bearer <token>` for all requests, and **only** this way for state-changing requests (`POST`, `DELETE`);
-  - as the `pixsheaf_job` cookie only for `GET /jobs/{jobId}/events` and `GET /jobs/{jobId}/download`. The server sets the cookie on job creation with `HttpOnly; SameSite=Strict; Path=/api/v1/jobs/{jobId}; Max-Age=<ttl>`, plus `Secure` over TLS.
+  - as a cookie only for `GET /jobs/{jobId}/events` and the downloads. The server sets the cookie on job creation (see the amendment below for its name and attributes).
 - The server stores only a hash of the token and compares in constant time.
 - State-changing requests are rejected with 403 when `Sec-Fetch-Site` is `cross-site` or `same-site`, or when `Origin` is present and differs from the server origin. `POST /jobs` additionally requires `Content-Type: application/json`, which a cross-site form cannot send without a CORS preflight, and CORS stays off.
 
@@ -42,3 +42,13 @@ A leaked job URL therefore grants nothing, and the token doubles as the CSRF tok
 - API clients and the CLI (Phase "Could") must keep the token from the create response; losing it means the job cannot be accessed and simply expires.
 - Adding authentication later (ADR 0015) stays a middleware in front of this model; the job token remains a capability for the job itself.
 - Tests must cover: missing, wrong, and cookie-only tokens on state-changing requests; cross-site `Sec-Fetch-Site` and foreign `Origin`; uploads beyond `expectedFiles` (409); a second download (404).
+
+## Amendment (Phase 6, 2026-11-28): cookie name and attributes
+
+The ASVS 5.0 review (requirements 3.3.1 and 3.3.3) asks for the `__Host-` cookie prefix. That prefix requires `Path=/`, so the original path-scoped `pixsheaf_job` cookie could not keep its name. The cookie is now named `__Host-pixsheaf-{jobId}` with `Path=/; Max-Age=<ttl>; HttpOnly; Secure; SameSite=Strict`:
+
+- The job ID in the name binds the cookie to its job, as the path did before; parallel jobs in one browser (a preview and a batch) do not overwrite each other.
+- The `__Host-` prefix makes browsers refuse the cookie unless it is `Secure`, has `Path=/`, and comes from this host, so a sibling subdomain cannot plant a token.
+- `Secure` is always set (since Phase 3): browsers accept it from `http://localhost` and `127.0.0.1`, and every other deployment must use TLS.
+- The cookie still opens only the read-only event stream and the downloads; state-changing requests need the `Authorization` header.
+

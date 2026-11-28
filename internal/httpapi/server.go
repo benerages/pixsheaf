@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -32,14 +33,15 @@ func New(addr string, ui fs.FS, logger *slog.Logger, opts Options) *http.Server 
 		if opts.RequestsPerMinute > 0 {
 			limiter = newRateLimiter(opts.RequestsPerMinute)
 		}
-		handler = limitClients(newClientIdentifier(opts.TrustedProxies), limiter, mux)
+		handler = limitClients(newClientIdentifier(opts.TrustedProxies), limiter, logger, opts.Requests,
+			observe(logger, opts.Requests, mux))
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.Handle("GET /", http.FileServerFS(ui))
+	mux.Handle("GET /", noDirectoryListing(http.FileServerFS(ui)))
 
 	return &http.Server{
 		Addr:              addr,
@@ -51,4 +53,16 @@ func New(addr string, ui fs.FS, logger *slog.Logger, opts Options) *http.Server 
 		MaxHeaderBytes:    maxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
+}
+
+// noDirectoryListing answers 404 for folder paths other than the root, so
+// that the file server never lists a folder of the UI (ASVS 5.0 13.4.3).
+func noDirectoryListing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := r.URL.Path; p != "/" && strings.HasSuffix(p, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

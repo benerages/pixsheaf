@@ -68,6 +68,12 @@ type Config struct {
 	TrustedProxies []netip.Prefix
 	// LogLevel is the minimum log level.
 	LogLevel slog.Level
+	// MetricsAddr is the address of the Prometheus endpoint; empty
+	// disables it.
+	MetricsAddr string
+	// DisabledFormats are input formats refused by API and workers
+	// (ADR 0016), in the API's names ("heif" for HEIC).
+	DisabledFormats []string
 }
 
 type setting struct {
@@ -158,6 +164,37 @@ var settings = map[string]setting{
 	"LOG_LEVEL": {"info", func(c *Config, v string) error {
 		return c.LogLevel.UnmarshalText([]byte(v))
 	}},
+	"DISABLE_FORMATS": {"", func(c *Config, v string) error {
+		c.DisabledFormats = nil
+		seen := map[string]bool{}
+		for part := range strings.SplitSeq(v, ",") {
+			f := strings.ToLower(strings.TrimSpace(part))
+			if f == "" {
+				continue
+			}
+			if alias, ok := formatAliases[f]; ok {
+				f = alias
+			}
+			if !inputFormats[f] {
+				return fmt.Errorf("unknown format %q; use a comma-separated list of jpeg, png, webp, gif, tiff, bmp, avif, heic, jxl, zip", part)
+			}
+			if !seen[f] {
+				seen[f] = true
+				c.DisabledFormats = append(c.DisabledFormats, f)
+			}
+		}
+		return nil
+	}},
+	"METRICS_ADDR": {"", func(c *Config, v string) error {
+		if v == "" {
+			return nil
+		}
+		if _, err := netip.ParseAddrPort(normalizeAddr(v)); err != nil {
+			return fmt.Errorf("must be empty or host:port, e.g. :9464: %w", err)
+		}
+		c.MetricsAddr = v
+		return nil
+	}},
 }
 
 // Load builds a Config from an environment in os.Environ() format.
@@ -238,3 +275,13 @@ func intIn(lo, hi int, set func(*Config, int)) func(*Config, string) error {
 		return nil
 	}
 }
+
+// inputFormats are the upload formats that can be disabled, in the API's
+// names; formatAliases maps common alternative names to them.
+var (
+	inputFormats = map[string]bool{
+		"jpeg": true, "png": true, "webp": true, "gif": true, "tiff": true,
+		"bmp": true, "avif": true, "heif": true, "jxl": true, "zip": true,
+	}
+	formatAliases = map[string]string{"heic": "heif", "jpg": "jpeg", "tif": "tiff", "jpegxl": "jxl"}
+)

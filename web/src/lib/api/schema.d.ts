@@ -55,7 +55,7 @@ export interface paths {
         put?: never;
         /**
          * Create a job
-         * @description Creates a job with a validated pipeline. The response body contains the job token; the server also sets it as the `pixsheaf_job` cookie for this job's path.
+         * @description Creates a job with a validated pipeline. The response body contains the job token; the server also sets it as the `__Host-pixsheaf-{jobId}` cookie.
          */
         post: operations["createJob"];
         delete?: never;
@@ -97,8 +97,8 @@ export interface paths {
         put?: never;
         /**
          * Upload one file
-         * @description Uploads one image or one ZIP archive as a multipart form with a single part named `file`. The type is detected from the content (magic bytes); the part's `Content-Type` and file name are not used for that decision (ADR 0014). The file name may contain a relative folder path (folder uploads); it is kept in memory only, to build the output name and the folder structure of the ZIP download, and it is never logged. Processing starts immediately.
-         *     A ZIP archive counts as one upload and becomes a file of kind `archive`. It is unpacked in the worker sandbox (ADR 0022) within `maxArchiveBytes` and `maxArchiveEntries` and the job's file and size limits; each image entry then becomes a file of kind `image` with `archiveId` set. Directories are skipped; symbolic links, encrypted entries, nested archives, and entries that are too large or compressed too strongly become failed files with a reason, so they appear in the report.
+         * @description Uploads one image or one ZIP archive as a multipart form with a single part named `file`. The type is detected from the content (magic bytes); the part's `Content-Type` and file name are not used for that decision (ADR 0014). The file name must still end in an image extension (`.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.png`, `.webp`, `.avif`, `.gif`, `.tif`, `.tiff`, `.bmp`, `.jxl`, `.heic`, `.heif`, `.hif`) or in `.zip`, compared case-insensitively; otherwise the upload gets 415 `unsupported_format` (ADR 0023). An extension that does not match the content is accepted, because the content decides and every output is a new encode. Formats the operator disabled (`PIXSHEAF_DISABLE_FORMATS`, ADR 0016) get 415 `format_disabled` and are missing from `GET /capabilities`. The file name may contain a relative folder path (folder uploads); it is kept in memory only, to build the output name and the folder structure of the ZIP download, and it is never logged. Processing starts immediately.
+         *     A ZIP archive counts as one upload and becomes a file of kind `archive`. It is unpacked in the worker sandbox (ADR 0022) within `maxArchiveBytes` and `maxArchiveEntries` and the job's file and size limits; each image entry then becomes a file of kind `image` with `archiveId` set. Directories are skipped; symbolic links, encrypted entries, nested archives, entries without an image extension or in a disabled format, and entries that are too large or compressed too strongly become failed files with a reason, so they appear in the report.
          */
         post: operations["uploadFile"];
         delete?: never;
@@ -143,7 +143,7 @@ export interface paths {
         };
         /**
          * Download one processed file once
-         * @description Returns the result of one file of a job, for example to save single files of a batch. Available once the file is `done`. The result can be downloaded once; afterwards it is deleted, the file shows `downloaded: true`, and the job's ZIP download leaves it out (the report still lists it). The `pixsheaf_job` cookie is accepted here.
+         * @description Returns the result of one file of a job, for example to save single files of a batch. Available once the file is `done`. The result can be downloaded once; afterwards it is deleted, the file shows `downloaded: true`, and the job's ZIP download leaves it out (the report still lists it). The job cookie is accepted here.
          */
         get: operations["downloadFile"];
         put?: never;
@@ -174,7 +174,7 @@ export interface paths {
          *     The first events describe the current state, so a client that
          *     reconnects needs no other request. The stream ends after the job
          *     reaches `done` or `canceled`. Comment lines (`: ping`) keep the
-         *     connection open. The `pixsheaf_job` cookie is accepted here.
+         *     connection open. The job cookie is accepted here.
          */
         get: operations["streamJobEvents"];
         put?: never;
@@ -196,7 +196,7 @@ export interface paths {
         };
         /**
          * Download the result once
-         * @description Returns the processed image when the job was created with `expectedFiles: 1` and that upload is an image; otherwise a ZIP archive, streamed without buffering, with every successfully processed file and a `report.json` (schema `Report`). Names inside the archive follow the job's `naming`; duplicates get a suffix such as ` (2)`. Available once the job is `done`. After the download the job and its data are deleted; a second request returns 404. Original bytes are never returned; every output is a new encode (ADR 0014). The `pixsheaf_job` cookie is accepted here.
+         * @description Returns the processed image when the job was created with `expectedFiles: 1` and that upload is an image; otherwise a ZIP archive, streamed without buffering, with every successfully processed file and a `report.json` (schema `Report`). Names inside the archive follow the job's `naming`; duplicates get a suffix such as ` (2)`. Available once the job is `done`. After the download the job and its data are deleted; a second request returns 404. Original bytes are never returned; every output is a new encode (ADR 0014). The job cookie is accepted here.
          */
         get: operations["downloadJob"];
         put?: never;
@@ -685,7 +685,7 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description The request body or the uploaded file has a type that is not allowed (ADR 0014). */
+        /** @description The request body or the uploaded file has a type that is not allowed (`unsupported_media_type`, `unsupported_format`; ADR 0014, ADR 0023), or the operator disabled the file's format (`format_disabled`, ADR 0016). */
         UnsupportedMediaType: {
             headers: {
                 [name: string]: unknown;
@@ -803,7 +803,7 @@ export interface operations {
                 headers: {
                     /** @description URL of the new job. */
                     Location?: string;
-                    /** @description `pixsheaf_job=<token>; Path=/api/v1/jobs/<jobId>; HttpOnly; SameSite=Strict; Max-Age=<seconds until expiry>`, plus `Secure` when the request arrived over TLS. */
+                    /** @description `__Host-pixsheaf-<jobId>=<token>; Path=/; Max-Age=<seconds until expiry>; HttpOnly; Secure; SameSite=Strict`. Browsers accept `Secure` cookies from `http://localhost` and `127.0.0.1`; any other address must be served over TLS. */
                     "Set-Cookie"?: string;
                     "Cache-Control": components["headers"]["CacheControlNoStore"];
                     [name: string]: unknown;

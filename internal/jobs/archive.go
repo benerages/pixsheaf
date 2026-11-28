@@ -140,9 +140,19 @@ func (m *Manager) storeEntries(listing []jobproto.ArchiveEntry, output io.Reader
 	out := make([]entryFile, 0, len(listing))
 	for _, e := range listing {
 		ef := entryFile{name: e.Name, code: e.Code}
-		if e.Code != "" {
-			ef.msg = skipMessage(e.Code)
+		if ef.code == "" && !AllowedExtension(e.Name) {
+			ef.code = jobproto.CodeUnsupportedFormat
+		}
+		if ef.code != "" {
+			ef.msg = skipMessage(ef.code)
 			out = append(out, ef)
+			// The worker streams every entry it accepted; skip the bytes
+			// of an entry that is rejected here.
+			if e.Code == "" {
+				if _, err := io.CopyN(io.Discard, output, e.Bytes); err != nil {
+					return out, err
+				}
+			}
 			continue
 		}
 		name, w, err := m.create()
@@ -162,10 +172,12 @@ func (m *Manager) storeEntries(listing []jobproto.ArchiveEntry, output io.Reader
 			out = append(out, ef)
 			return out, err
 		}
-		switch ef.format = Sniff(head.Bytes()); ef.format {
-		case "":
+		switch ef.format = Sniff(head.Bytes()); {
+		case ef.format == "":
 			ef.code, ef.msg = jobproto.CodeUnsupportedFormat, "the file is not an allowed image format"
-		case FormatZip:
+		case m.formatDisabled(ef.format):
+			ef.code, ef.msg = jobproto.CodeFormatDisabled, "this image format is disabled on this server"
+		case ef.format == FormatZip:
 			ef.code, ef.msg = "archive_entry_unsupported", skipMessage("archive_entry_unsupported")
 		}
 		if ef.code != "" {
@@ -183,6 +195,8 @@ func skipMessage(code string) string {
 		return "symbolic links, encrypted entries, and nested archives are not supported"
 	case "too_large":
 		return "the entry is too large or compressed too strongly"
+	case jobproto.CodeUnsupportedFormat:
+		return "the file name must end in an image extension such as .jpg or .png"
 	default:
 		return "the entry could not be read"
 	}

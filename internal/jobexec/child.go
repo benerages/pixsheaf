@@ -110,6 +110,8 @@ func unzip(req jobproto.Request, input []byte, stdout io.Writer) int {
 }
 
 func handle(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
+	// Before libvips starts, so that the loaders stay blocked.
+	imaging.DisableFormats(req.DisabledFormats)
 	switch req.Op {
 	case jobproto.OpSandboxCheck:
 		r := sandbox.Probe()
@@ -126,6 +128,8 @@ func handle(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 func inspect(req jobproto.Request, input []byte) jobproto.Response {
 	info, err := imaging.Inspect(input)
 	switch {
+	case errors.Is(err, imaging.ErrFormatDisabled):
+		return failure(jobproto.CodeFormatDisabled, "this image format is disabled on this server")
 	case errors.Is(err, imaging.ErrUnsupported):
 		return failure(jobproto.CodeUnsupportedFormat, "the file is not an allowed image format")
 	case errors.Is(err, imaging.ErrDecode):
@@ -169,6 +173,8 @@ func process(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 		return jobproto.Response{Output: &jobproto.ImageInfo{
 			Format: out.Format, Width: out.Width, Height: out.Height, Pages: out.Pages,
 		}}, out.Data
+	case errors.Is(err, imaging.ErrFormatDisabled):
+		return failure(jobproto.CodeFormatDisabled, "this image format is disabled on this server"), nil
 	case errors.Is(err, imaging.ErrUnsupported):
 		return failure(jobproto.CodeUnsupportedFormat, "the file is not an allowed image format"), nil
 	case errors.Is(err, imaging.ErrTooManyPixels):

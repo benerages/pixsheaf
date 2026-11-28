@@ -87,6 +87,16 @@ var (
 		"VipsForeignLoadHeif",
 		"VipsForeignLoadJxl",
 	}
+	// loaderInputs lists the input formats each allowed loader reads.
+	loaderInputs = map[string][]string{
+		"VipsForeignLoadJpeg":  {"jpeg"},
+		"VipsForeignLoadPng":   {"png"},
+		"VipsForeignLoadWebp":  {"webp"},
+		"VipsForeignLoadNsgif": {"gif"},
+		"VipsForeignLoadTiff":  {"tiff"},
+		"VipsForeignLoadHeif":  {"heif", "avif"},
+		"VipsForeignLoadJxl":   {"jxl"},
+	}
 	allowedSavers = []string{
 		"VipsForeignSaveJpeg",
 		"VipsForeignSavePng",
@@ -125,6 +135,9 @@ func Init() error {
 		}
 		for _, names := range [][]string{allowedLoaders, allowedSavers} {
 			for _, name := range names {
+				if loaderDisabled(loaderInputs[name]) {
+					continue // ADR 0016: a disabled format keeps its loader blocked
+				}
 				cs := C.CString(name)
 				C.px_allow(cs)
 				C.free(unsafe.Pointer(cs))
@@ -173,6 +186,9 @@ var loaderFormats = []struct{ prefix, format string }{
 // against decompression bombs (ADR 0008).
 func Inspect(buf []byte) (Info, error) {
 	if isBMP(buf) {
+		if disabledFormats["bmp"] {
+			return Info{}, fmt.Errorf("%w: bmp", ErrFormatDisabled)
+		}
 		return inspectBMP(buf)
 	}
 	if _, err := FindLoader(buf); err != nil {
@@ -198,6 +214,9 @@ func Inspect(buf []byte) (Info, error) {
 	}
 	if info.Format == "heif" && C.GoString(&compression[0]) == "av1" {
 		info.Format = "avif"
+	}
+	if disabledFormats[info.Format] {
+		return Info{}, fmt.Errorf("%w: %s", ErrFormatDisabled, info.Format)
 	}
 	return info, nil
 }

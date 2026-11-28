@@ -75,3 +75,21 @@ func TestRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestDisableFormatsAndMetrics(t *testing.T) {
+	c, err := Load([]string{"PIXSHEAF_DISABLE_FORMATS= HEIC, avif,heif ,", "PIXSHEAF_METRICS_ADDR=:9464"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if strings.Join(c.DisabledFormats, ",") != "heif,avif" || c.MetricsAddr != ":9464" {
+		t.Errorf("disabled %v, metrics %q", c.DisabledFormats, c.MetricsAddr)
+	}
+	if c, _ := Load(nil); c.DisabledFormats != nil || c.MetricsAddr != "" {
+		t.Errorf("defaults: disabled %v, metrics %q", c.DisabledFormats, c.MetricsAddr)
+	}
+	for _, bad := range []string{"PIXSHEAF_DISABLE_FORMATS=svg", "PIXSHEAF_DISABLE_FORMATS=heic;png", "PIXSHEAF_METRICS_ADDR=metrics"} {
+		if _, err := Load([]string{bad}); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+}

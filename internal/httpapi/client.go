@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/netip"
@@ -151,18 +152,21 @@ func (l *rateLimiter) prune(now time.Time) {
 
 // limitClients identifies the client of every API request, stores its key
 // in the context, and answers 429 when its bucket is empty.
-func limitClients(ids clientIdentifier, limiter *rateLimiter, next http.Handler) http.Handler {
+func limitClients(ids clientIdentifier, limiter *rateLimiter, logger *slog.Logger, stats *RequestStats, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
 		key := ids.key(r)
+		r = r.WithContext(context.WithValue(r.Context(), clientKeyType{}, key))
 		if ok, wait := limiter.allow(key); limiter != nil && !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(max(wait, 1)))
 			writeProblem(w, http.StatusTooManyRequests, codeRateLimited, "too many requests; retry later")
+			stats.count(http.StatusTooManyRequests, codeRateLimited)
+			logRequest(logger, r, http.StatusTooManyRequests, codeRateLimited, 0)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientKeyType{}, key)))
+		next.ServeHTTP(w, r)
 	})
 }

@@ -5,13 +5,17 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	ui := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>Pixsheaf</title>")}}
+	ui := fstest.MapFS{
+		"index.html":      {Data: []byte("<!doctype html><title>Pixsheaf</title>")},
+		"assets/app-1.js": {Data: []byte("export {}")},
+	}
 	srv := New("127.0.0.1:0", ui, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	ts := httptest.NewServer(srv.Handler)
 	t.Cleanup(ts.Close)
@@ -83,4 +87,22 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestNoDirectoryListing(t *testing.T) {
+	ts := newTestServer(t)
+	for path, want := range map[string]int{"/": 200, "/assets/app-1.js": 200, "/assets/": 404} {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("%s: %d, want %d", path, resp.StatusCode, want)
+		}
+		if strings.Contains(string(body), "app-1.js") && path != "/assets/app-1.js" {
+			t.Errorf("%s lists the folder", path)
+		}
+	}
 }

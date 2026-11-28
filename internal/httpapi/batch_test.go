@@ -220,7 +220,7 @@ func TestDownloadSingleFileOfBatch(t *testing.T) {
 	e.work(t, jobproto.Response{Output: &jobproto.ImageInfo{Format: "png", Width: 1, Height: 1, Pages: 1}}, "second")
 
 	// With the cookie, as a plain link would.
-	resp = e.do(t, "GET", path, "", "", nil, "Cookie", "pixsheaf_job="+jc.Token)
+	resp = e.do(t, "GET", path, "", "", nil, "Cookie", cookiePrefix+jc.Job.Id+"="+jc.Token)
 	expect(t, resp, http.StatusOK, "")
 	if b, _ := io.ReadAll(resp.Body); string(b) != "first" || !strings.Contains(resp.Header.Get("Content-Disposition"), `filename="a.png"`) {
 		t.Fatalf("file download %q %v", b, resp.Header)

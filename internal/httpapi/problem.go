@@ -15,6 +15,7 @@ const (
 	codeRequestInvalid    = "request_invalid"
 	codeUnsupportedMedia  = "unsupported_media_type"
 	codeUnsupportedFormat = "unsupported_format"
+	codeFormatDisabled    = "format_disabled"
 	codeFileTooLarge      = "file_too_large"
 	codeJobTooLarge       = "job_too_large"
 	codeBodyTooLarge      = "body_too_large"
@@ -44,8 +45,9 @@ func writeProblem(w http.ResponseWriter, status int, code, detail string, errs .
 	if len(errs) > 0 {
 		p.Errors = &errs
 	}
+	setProblemCode(w, code)
 	h := w.Header()
-	h.Set("Content-Type", "application/problem+json")
+	h.Set("Content-Type", "application/problem+json; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(p)
@@ -60,7 +62,7 @@ func writeBusy(w http.ResponseWriter, code, detail string, retryAfter int) {
 // writeJSON sends a JSON body with Cache-Control: no-store.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	h := w.Header()
-	h.Set("Content-Type", "application/json")
+	h.Set("Content-Type", "application/json; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)

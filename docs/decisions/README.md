@@ -26,3 +26,4 @@ Each ADR records one decision with its context and consequences. Status values: 
 | [0020](0020-text-watermark-rendering.md) | Text watermarks rendered in Go with the bundled Go fonts | Accepted |
 | [0021](0021-bmp-and-pdf-in-go.md) | BMP and PDF handled in Go; no PDF library | Accepted |
 | [0022](0022-batch-mode.md) | Batch mode: archives in the sandbox, fair queue, naming, presets | Accepted |
+| [0023](0023-upload-file-name-extensions.md) | Upload file names need an image extension; the content decides the format | Accepted |
