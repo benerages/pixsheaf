@@ -98,8 +98,12 @@
 <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
   <section class="min-w-0 space-y-4" aria-labelledby="batch-title">
     <div class="flex flex-wrap items-baseline justify-between gap-2">
-      <h2 id="batch-title" class="text-xl font-semibold">{images === 1 ? t("batch.titleOne") : t("batch.title", { count: images })}</h2>
-      <p class="muted text-sm tabular-nums">{t("batch.totalSize", { size: formatBytes(total, locale) })}</p>
+      <h2 id="batch-title" class="text-xl font-semibold">
+        {images === 1 ? t("batch.titleOne") : t("batch.title", { count: images })}
+      </h2>
+      <p class="muted text-sm tabular-nums">
+        {t("batch.totalSize", { size: formatBytes(total, locale) })}
+      </p>
     </div>
 
     {#if !batch.started && previewFile}
@@ -112,7 +116,9 @@
           working={preview.state === "working"}
         />
         {#if preview.state === "error"}
-          <p class="text-sm text-red-700 dark:text-red-400" role="alert">{errorText(preview.error, preview.errorDetail)}</p>
+          <p class="text-sm text-red-700 dark:text-red-400" role="alert">
+            {errorText(preview.error, preview.errorDetail)}
+          </p>
         {/if}
       </div>
     {/if}
@@ -127,7 +133,10 @@
     {/if}
 
     {#if batch.error}
-      <p class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100" role="alert">
+      <p
+        class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100"
+        role="alert"
+      >
         {errorText(batch.error)}
       </p>
     {/if}
@@ -137,10 +146,16 @@
         <thead class="muted border-b border-stone-200 text-xs dark:border-stone-800">
           <tr>
             <th scope="col" class="px-3 py-2 font-medium">{t("batch.file")}</th>
-            <th scope="col" class="hidden px-3 py-2 font-medium sm:table-cell">{t("batch.size")}</th>
+            <th scope="col" class="hidden px-3 py-2 font-medium sm:table-cell">
+              {t("batch.size")}
+            </th>
             <th scope="col" class="px-3 py-2 font-medium">{t("batch.status")}</th>
-            <th scope="col" class="hidden px-3 py-2 font-medium sm:table-cell">{t("batch.result")}</th>
-            <th scope="col" class="px-3 py-2 font-medium"><span class="sr-only">{t("batch.actions")}</span></th>
+            <th scope="col" class="hidden px-3 py-2 font-medium sm:table-cell">
+              {t("batch.result")}
+            </th>
+            <th scope="col" class="px-3 py-2 font-medium">
+              <span class="sr-only">{t("batch.actions")}</span>
+            </th>
           </tr>
         </thead>
         <tbody class="divide-y divide-stone-100 dark:divide-stone-800">
@@ -155,12 +170,22 @@
                   {/if}
                 </span>
                 {#if row.file?.archiveId}
-                  <span class="muted block text-xs">{t("batch.fromArchive", { name: batch.archiveName(row.file) })}</span>
+                  <span class="muted block text-xs">
+                    {t("batch.fromArchive", { name: batch.archiveName(row.file) })}
+                  </span>
                 {/if}
               </td>
-              <td class="hidden px-3 py-2 tabular-nums sm:table-cell">{formatBytes(row.bytes, locale)}</td>
+              <td class="hidden px-3 py-2 tabular-nums sm:table-cell">
+                {formatBytes(row.bytes, locale)}
+              </td>
               <td class="px-3 py-2">
-                <span class={row.status === "failed" ? "text-red-700 dark:text-red-400" : row.status === "done" ? "text-accent-700 dark:text-accent-300" : ""}>
+                <span
+                  class={row.status === "failed"
+                    ? "text-red-700 dark:text-red-400"
+                    : row.status === "done"
+                      ? "text-accent-700 dark:text-accent-300"
+                      : ""}
+                >
                   {t(statusKey(row))}
                 </span>
                 {#if row.error}
@@ -170,13 +195,20 @@
               <td class="hidden px-3 py-2 tabular-nums sm:table-cell">
                 {#if row.file?.output}
                   {formatBytes(row.file.output.bytes, locale)}
-                  <span class="muted text-xs">{formatPercent(changePercent(row.bytes, row.file.output.bytes), locale)}</span>
+                  <span class="muted text-xs">
+                    {formatPercent(changePercent(row.bytes, row.file.output.bytes), locale)}
+                  </span>
                 {/if}
               </td>
               <td class="px-3 py-2 text-right whitespace-nowrap">
                 {#if !batch.started && row.local}
                   {#if !row.local.path.toLowerCase().endsWith(".zip")}
-                    <button type="button" class="btn-quiet" aria-pressed={selected === i} onclick={() => (selected = i)}>
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      aria-pressed={selected === i}
+                      onclick={() => (selected = i)}
+                    >
                       {t("batch.preview")}
                     </button>
                   {/if}
@@ -184,23 +216,29 @@
                     type="button"
                     class="btn-quiet"
                     aria-label={t("batch.remove", { name: row.name })}
-                    onclick={() => (files = files.filter((f) => f !== row.local))}>×</button
+                    onclick={() => (files = files.filter((f) => f !== row.local))}
                   >
+                    ×
+                  </button>
                 {:else if row.status === "done" && row.file?.kind === "image" && !row.downloaded && !batch.zipDownloaded}
                   <a
                     class="btn-quiet"
                     href={batch.fileUrl(row)}
                     download
                     aria-label={t("batch.download", { name: row.file?.output?.name ?? row.name })}
-                    onclick={() => batch.markDownloaded(row.key)}>↓</a
+                    onclick={() => batch.markDownloaded(row.key)}
                   >
+                    ↓
+                  </a>
                 {:else if row.status === "queued" || row.status === "processing"}
                   <button
                     type="button"
                     class="btn-quiet"
                     aria-label={t("batch.cancel", { name: row.name })}
-                    onclick={() => void batch.cancel(row)}>×</button
+                    onclick={() => void batch.cancel(row)}
                   >
+                    ×
+                  </button>
                 {/if}
               </td>
             </tr>
@@ -211,16 +249,27 @@
 
     <div class="flex flex-wrap items-center gap-3">
       {#if !batch.started}
-        <button type="button" class="btn-primary" onclick={start}
-          disabled={batch.rows.length === 0 || editor.patternProblem !== null}>
+        <button
+          type="button"
+          class="btn-primary"
+          onclick={start}
+          disabled={batch.rows.length === 0 || editor.patternProblem !== null}
+        >
           {images === 1 ? t("batch.startOne") : t("batch.start", { count: images })}
         </button>
       {:else if allDone && !batch.zipDownloaded}
-        <a class="btn-primary" href={batch.zipUrl()} download onclick={() => (batch.zipDownloaded = true)}>
+        <a
+          class="btn-primary"
+          href={batch.zipUrl()}
+          download
+          onclick={() => (batch.zipDownloaded = true)}
+        >
           {t("batch.downloadAll")}
         </a>
       {:else if !allDone && batch.jobStatus !== "canceled"}
-        <button type="button" class="btn-secondary" onclick={() => void batch.cancelAll()}>{t("batch.cancelAll")}</button>
+        <button type="button" class="btn-secondary" onclick={() => void batch.cancelAll()}>
+          {t("batch.cancelAll")}
+        </button>
       {/if}
       {#if batch.zipDownloaded}
         <p class="muted text-sm" role="status">{t("batch.downloaded")}</p>

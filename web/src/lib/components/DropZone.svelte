@@ -44,7 +44,9 @@
   aria-labelledby="drop-title"
   class={[
     "card flex flex-col items-center justify-center gap-4 border-2 border-dashed px-6 py-16 text-center transition-colors sm:py-24",
-    active ? "border-accent-500 bg-accent-50 dark:bg-accent-950" : "border-stone-300 dark:border-stone-700",
+    active
+      ? "border-accent-500 bg-accent-50 dark:bg-accent-950"
+      : "border-stone-300 dark:border-stone-700",
   ]}
   ondragenter={(e) => {
     e.preventDefault();
@@ -58,8 +60,19 @@
   }}
   ondrop={drop}
 >
-  <svg aria-hidden="true" viewBox="0 0 24 24" class="size-10 text-accent-700 dark:text-accent-300" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v1.5A1.5 1.5 0 0 0 4.5 19.5h15a1.5 1.5 0 0 0 1.5-1.5v-1.5M12 3v12m0-12 4 4m-4-4-4 4" />
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    class="size-10 text-accent-700 dark:text-accent-300"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+  >
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      d="M3 16.5v1.5A1.5 1.5 0 0 0 4.5 19.5h15a1.5 1.5 0 0 0 1.5-1.5v-1.5M12 3v12m0-12 4 4m-4-4-4 4"
+    />
   </svg>
   <h2 id="drop-title" class="text-xl font-semibold">
     {active ? t("drop.active") : t("drop.title")}

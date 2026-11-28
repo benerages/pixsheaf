@@ -71,7 +71,7 @@
   }
 
   function rotate(delta: 90 | -90) {
-    s.rotate = (((s.rotate + delta) % 360) + 360) % 360 as 0 | 90 | 180 | 270;
+    s.rotate = ((((s.rotate + delta) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
   }
 
   let saving = $state(false);
@@ -153,7 +153,11 @@
       <p class="muted mt-2 text-sm">{presets.find(editor.presetId)?.description ?? ""}</p>
       <p class="muted mt-2 text-xs">
         {t("settings.presetLocked")}
-        <button type="button" class="text-accent-700 underline dark:text-accent-300" onclick={() => editor.useQuickSettings()}>
+        <button
+          type="button"
+          class="text-accent-700 underline dark:text-accent-300"
+          onclick={() => editor.useQuickSettings()}
+        >
           {t("settings.presetUnlock")}
         </button>
       </p>
@@ -187,9 +191,15 @@
       </form>
     {:else}
       <div class="mt-2 -ml-2 flex flex-wrap gap-1">
-        <button type="button" class="btn-quiet" onclick={() => (saving = true)}>{t("settings.save")}</button>
-        <button type="button" class="btn-quiet" onclick={exportCurrent}>{t("settings.export")}</button>
-        <button type="button" class="btn-quiet" onclick={() => importInput?.click()}>{t("settings.import")}</button>
+        <button type="button" class="btn-quiet" onclick={() => (saving = true)}>
+          {t("settings.save")}
+        </button>
+        <button type="button" class="btn-quiet" onclick={exportCurrent}>
+          {t("settings.export")}
+        </button>
+        <button type="button" class="btn-quiet" onclick={() => importInput?.click()}>
+          {t("settings.import")}
+        </button>
         {#if editor.presetId.startsWith("custom-")}
           <button
             type="button"
@@ -197,14 +207,24 @@
             onclick={() => {
               presets.remove(editor.presetId);
               editor.useQuickSettings();
-            }}>{t("settings.delete")}</button
+            }}
           >
+            {t("settings.delete")}
+          </button>
         {/if}
       </div>
     {/if}
-    <input bind:this={importInput} type="file" accept="application/json,.json" class="hidden" onchange={imported} />
+    <input
+      bind:this={importInput}
+      type="file"
+      accept="application/json,.json"
+      class="hidden"
+      onchange={imported}
+    />
     {#if importError}
-      <p class="mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{t("settings.importInvalid")}</p>
+      <p class="mt-1 text-sm text-red-700 dark:text-red-400" role="alert">
+        {t("settings.importInvalid")}
+      </p>
     {/if}
   </div>
 
@@ -227,20 +247,34 @@
     {#if !s.lossless || !losslessFormats.has(s.format)}
       <div>
         <span class="label" id="compression-label">{t("settings.compression")}</span>
-        <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm" role="radiogroup" aria-labelledby="compression-label">
+        <div
+          class="flex flex-wrap gap-x-4 gap-y-1 text-sm"
+          role="radiogroup"
+          aria-labelledby="compression-label"
+        >
           <label class="flex items-center gap-1.5">
             <input type="radio" value="auto" bind:group={s.compression} class="accent-accent-700" />
             {t("settings.compressionAuto")}
           </label>
           {#if s.format === "keep" || lossyFormats.has(s.format)}
             <label class="flex items-center gap-1.5">
-              <input type="radio" value="quality" bind:group={s.compression} class="accent-accent-700" />
+              <input
+                type="radio"
+                value="quality"
+                bind:group={s.compression}
+                class="accent-accent-700"
+              />
               {t("settings.compressionQuality")}
             </label>
           {/if}
           {#if !["gif", "tiff", "bmp"].includes(s.format)}
             <label class="flex items-center gap-1.5">
-              <input type="radio" value="size" bind:group={s.compression} class="accent-accent-700" />
+              <input
+                type="radio"
+                value="size"
+                bind:group={s.compression}
+                class="accent-accent-700"
+              />
               {t("settings.compressionSize")}
             </label>
           {/if}
@@ -249,12 +283,26 @@
       {#if s.compression === "quality"}
         <div>
           <label class="label" for="quality">{t("settings.quality", { value: s.quality })}</label>
-          <input id="quality" type="range" min="1" max="100" bind:value={s.quality} class="w-full accent-accent-700" />
+          <input
+            id="quality"
+            type="range"
+            min="1"
+            max="100"
+            bind:value={s.quality}
+            class="w-full accent-accent-700"
+          />
         </div>
       {:else if s.compression === "size"}
         <div>
           <label class="label" for="target">{t("settings.targetKb")}</label>
-          <input id="target" type="number" min="1" max="1048576" bind:value={s.targetKb} class="field" />
+          <input
+            id="target"
+            type="number"
+            min="1"
+            max="1048576"
+            bind:value={s.targetKb}
+            class="field"
+          />
         </div>
       {/if}
     {/if}
@@ -274,7 +322,9 @@
       {#if s.resize !== "none"}
         <div>
           <label class="label" for="resize-value">
-            {s.resize === "percent" ? t("settings.resizeValuePercent") : t("settings.resizeValuePx")}
+            {s.resize === "percent"
+              ? t("settings.resizeValuePercent")
+              : t("settings.resizeValuePx")}
           </label>
           <input
             id="resize-value"
@@ -302,13 +352,51 @@
       <div>
         <span class="label">{t("settings.rotate")}</span>
         <div class="flex items-center gap-1">
-          <button type="button" class="btn-secondary px-2" aria-label={t("settings.rotateLeft")} onclick={() => rotate(-90)}>
-            <svg aria-hidden="true" viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /></svg>
+          <button
+            type="button"
+            class="btn-secondary px-2"
+            aria-label={t("settings.rotateLeft")}
+            onclick={() => rotate(-90)}
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              class="size-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
+              />
+            </svg>
           </button>
-          <button type="button" class="btn-secondary px-2" aria-label={t("settings.rotateRight")} onclick={() => rotate(90)}>
-            <svg aria-hidden="true" viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3" /></svg>
+          <button
+            type="button"
+            class="btn-secondary px-2"
+            aria-label={t("settings.rotateRight")}
+            onclick={() => rotate(90)}
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              class="size-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3"
+              />
+            </svg>
           </button>
-          <span class="ml-1 text-sm tabular-nums" aria-live="polite">{t("settings.rotation", { angle: s.rotate })}</span>
+          <span class="ml-1 text-sm tabular-nums" aria-live="polite">
+            {t("settings.rotation", { angle: s.rotate })}
+          </span>
         </div>
       </div>
       <div>
@@ -325,7 +413,11 @@
   <fieldset class="space-y-3 p-4" disabled={!quick}>
     <legend class="sr-only">{t("settings.metadata")}</legend>
     <label class="flex items-start gap-2 text-sm">
-      <input type="checkbox" bind:checked={s.keepMetadata} class="mt-0.5 size-4 accent-accent-700" />
+      <input
+        type="checkbox"
+        bind:checked={s.keepMetadata}
+        class="mt-0.5 size-4 accent-accent-700"
+      />
       <span>
         {t("settings.metadata")}
         <span class="muted block text-xs">{t("settings.metadataNote")}</span>
@@ -338,7 +430,13 @@
     {#if s.watermark}
       <div>
         <label class="label" for="wm-text">{t("settings.watermarkText")}</label>
-        <input id="wm-text" type="text" maxlength="200" bind:value={s.watermarkText} class="field" />
+        <input
+          id="wm-text"
+          type="text"
+          maxlength="200"
+          bind:value={s.watermarkText}
+          class="field"
+        />
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
@@ -353,7 +451,15 @@
           <label class="label" for="wm-opacity">
             {t("settings.watermarkOpacity", { value: Math.round(s.watermarkOpacity * 100) })}
           </label>
-          <input id="wm-opacity" type="range" min="0.05" max="1" step="0.05" bind:value={s.watermarkOpacity} class="w-full accent-accent-700" />
+          <input
+            id="wm-opacity"
+            type="range"
+            min="0.05"
+            max="1"
+            step="0.05"
+            bind:value={s.watermarkOpacity}
+            class="w-full accent-accent-700"
+          />
         </div>
       </div>
     {/if}
@@ -378,7 +484,9 @@
           {#if patternMessage}
             <span class="text-red-700 dark:text-red-400">{patternMessage}</span>
           {:else if example}
-            <span class="muted">{t("batch.patternExample", { example: expandPattern(editor.pattern, example) })}</span>
+            <span class="muted">
+              {t("batch.patternExample", { example: expandPattern(editor.pattern, example) })}
+            </span>
           {/if}
         </p>
       </div>
@@ -400,13 +508,16 @@
       spellcheck="false"
       class="field mt-2 font-mono text-xs"
       aria-invalid={pipelineError}
-      aria-describedby={pipelineError ? "pipeline-error" : undefined}
-    ></textarea>
+      aria-describedby={pipelineError ? "pipeline-error" : undefined}></textarea>
     {#if pipelineError}
-      <p id="pipeline-error" class="mt-1 text-sm text-red-700 dark:text-red-400">{t("settings.advancedInvalid")}</p>
+      <p id="pipeline-error" class="mt-1 text-sm text-red-700 dark:text-red-400">
+        {t("settings.advancedInvalid")}
+      </p>
     {/if}
     <div class="mt-2 flex flex-wrap gap-2">
-      <button type="button" class="btn-secondary" onclick={applyPipeline}>{t("settings.advancedApply")}</button>
+      <button type="button" class="btn-secondary" onclick={applyPipeline}>
+        {t("settings.advancedApply")}
+      </button>
       {#if !quick}
         <button type="button" class="btn-quiet" onclick={() => editor.useQuickSettings()}>
           {t("settings.advancedReset")}

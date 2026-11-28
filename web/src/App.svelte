@@ -28,7 +28,7 @@
       if (list.length > 0 && files.length === 0) {
         e.preventDefault();
         void choose(
-          list.map((file) => ({ file, path: file.name || "pasted-image" })),
+          list.map((file) => ({ file, path: pastedName(file) })),
           false,
         );
       }
@@ -37,11 +37,21 @@
     return () => window.removeEventListener("paste", paste);
   });
 
+  // Pasted images may have no name; the API needs an image extension.
+  function pastedName(file: File): string {
+    if (file.name.includes(".")) {
+      return file.name;
+    }
+    const sub = file.type.split("/")[1] ?? "png";
+    return `pasted-image.${sub === "jpeg" ? "jpg" : sub}`;
+  }
+
   // One image is the main workflow; several files, a folder, or an archive
   // switch to batch mode without any extra step.
   async function choose(picked: PickedFile[], folder: boolean) {
     const first = picked[0];
-    const single = picked.length === 1 && first !== undefined && !folder && !(await isZip(first.file));
+    const single =
+      picked.length === 1 && first !== undefined && !folder && !(await isZip(first.file));
     files = picked;
     batchMode = !single;
     main?.focus();
@@ -58,14 +68,19 @@
   );
 </script>
 
-<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2">
+<a
+  href="#main"
+  class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2"
+>
   {t("app.skip")}
 </a>
 <Header onhome={reset} />
 <main id="main" tabindex="-1" bind:this={main} class="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
   {#if files.length === 0}
     <div class="mx-auto max-w-3xl pt-6 sm:pt-12">
-      <h1 class="mb-6 text-center text-2xl font-semibold tracking-tight sm:text-3xl">{t("app.tagline")}</h1>
+      <h1 class="mb-6 text-center text-2xl font-semibold tracking-tight sm:text-3xl">
+        {t("app.tagline")}
+      </h1>
       <DropZone onfiles={choose} {maxFiles} {limitText} />
     </div>
   {:else if batchMode}
