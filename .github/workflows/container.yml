@@ -35,6 +35,15 @@ jobs:
         run: docker build --file deploy/docker/worker.Dockerfile --target test .
       - name: Container isolation tests (runc)
         run: bash tests/container/run.sh
+      - name: Release compose file is valid and has no build sections
+        run: |
+          d=$(printf '0%.0s' $(seq 64))
+          bash scripts/release-compose.sh 0.0.0 \
+            "ghcr.io/benerages/pixsheaf-api:0.0.0@sha256:$d" \
+            "ghcr.io/benerages/pixsheaf-worker:0.0.0@sha256:$d" > /tmp/release-compose.yaml
+          docker compose -f /tmp/release-compose.yaml config --quiet
+          if grep -q 'build:' /tmp/release-compose.yaml; then echo "build section left" >&2; exit 1; fi
+          [[ $(grep -c '@sha256:' /tmp/release-compose.yaml) -eq 2 ]]
       - name: End-to-end test (single image)
         run: |
           docker compose up --detach --build --wait

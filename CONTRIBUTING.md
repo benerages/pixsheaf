@@ -46,4 +46,4 @@ CI must be green: Go tests and linters, web lint/check/build, hadolint, zizmor, 
 
 ## Releases
 
-Push a tag `vX.Y.Z` on `main`. The release workflow builds both architectures natively, publishes a signed multi-arch index with SBOM and provenance attestations to GHCR, and creates the GitHub release with the changelog from `scripts/changelog.sh`. Start the workflow by hand first for a dry run that builds everything without publishing.
+Push a tag `vX.Y.Z` on `main`. The release workflow builds both architectures natively, publishes a signed multi-arch index with SBOM and provenance attestations to GHCR, and creates the GitHub release with the changelog from `scripts/changelog.sh` and a digest-pinned `compose.yaml` from `scripts/release-compose.sh`. Start the workflow by hand first for a dry run that builds everything without publishing.

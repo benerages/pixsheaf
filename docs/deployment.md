@@ -9,6 +9,20 @@ Pixsheaf ships as two images started by `compose.yaml`:
 
 Both run as UID 10001 with a read-only root filesystem, no Linux capabilities, `no-new-privileges`, and memory, CPU, and process limits. Scale workers with `docker compose up -d --scale worker=3`.
 
+## Installing and updating a release
+
+Every GitHub release has a `compose.yaml` attached. It is the repository's `compose.yaml` without the build sections, with both images pinned to that release by tag and digest:
+
+```sh
+mkdir pixsheaf && cd pixsheaf
+curl -fsSLO https://github.com/benerages/pixsheaf/releases/latest/download/compose.yaml
+docker compose up -d
+```
+
+Settings go into an optional `.env` file next to it ([configuration.md](configuration.md)). To update, replace `compose.yaml` with the one from the new release (`releases/download/vX.Y.Z/compose.yaml` for a specific version) and run `docker compose up -d` again; jobs in progress are lost on restart, nothing else is kept anyway. Because the images are pinned by digest, a moved tag in the registry never changes what runs. Before starting a new version you can verify its signature with the `cosign verify` command from the release notes.
+
+The `compose.yaml` in the repository is for development: it builds the images from source with `docker compose up -d --build`.
+
 ## Publishing behind a reverse proxy
 
 The API binds to the loopback interface of the host. Put a TLS-terminating reverse proxy in front of it and set `PIXSHEAF_TRUSTED_PROXIES` to the proxy's address so client IPs are used for rate limiting.

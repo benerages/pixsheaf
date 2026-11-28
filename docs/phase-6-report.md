@@ -25,7 +25,7 @@ Phase 6 reviews Pixsheaf against OWASP ASVS 5.0 Level 2, closes the gaps found, 
 |---|---|
 | Build | Both images natively on amd64 and arm64 runners, pushed by digest; BuildKit attaches an SPDX SBOM (Syft scanner) and SLSA provenance (`mode=max`) per platform |
 | Publish | One multi-arch index per image with the tags `X.Y.Z`, `X.Y`, and `latest`; signed with cosign keyless (GitHub OIDC, recursively over all manifests) and attested with `actions/attest-build-provenance` |
-| Release | GitHub release with the changelog from Conventional Commits (`scripts/changelog.sh`), the image references, verification commands, and the SBOMs |
+| Release | GitHub release with the changelog from Conventional Commits (`scripts/changelog.sh`), the image references, verification commands, the SBOMs, and a `compose.yaml` with both images pinned by tag and digest (`scripts/release-compose.sh`), so a host needs only that file: `curl -fsSLO https://github.com/benerages/pixsheaf/releases/latest/download/compose.yaml && docker compose up -d` |
 
 Started by hand, the workflow is a dry run that builds everything for both architectures without publishing. All Actions are pinned by commit SHA and are at least seven days old (ADR 0013); for that reason `sigstore/cosign-installer` and `anchore/sbom-action` use the release before the latest one, and the SBOM comes from BuildKit's Syft scanner instead of a separate action.
 
@@ -51,7 +51,7 @@ Started by hand, the workflow is a dry run that builds everything for both archi
 | Batch with the maximum file count within memory limits | Load test: 8 batches of 50 files (the default maximum), 3000 × 2000 pixels each; peak API 46 MiB of 768 MiB, worker 112 MiB of 1024 MiB, no OOM kill |
 | Broken files rejected individually, listed in the report | Load test (every tenth file broken, exactly those failed), `batch.sh`, `batch.spec.ts` |
 | UI preset and API give byte-identical results | New browser test `preset-parity.spec.ts` (Web preset, compared byte for byte) |
-| `docker compose up -d` on a fresh host; `--scale worker=n` increases throughput | Compose pulls the release images before building; load test 10.9 files/s with one worker, 17.1 files/s with two (+57 %) |
+| `docker compose up -d` on a fresh host; `--scale worker=n` increases throughput | The release `compose.yaml` has no build sections and pulls the digest-pinned images; load test 10.9 files/s with one worker, 17.1 files/s with two (+57 %) |
 | No critical or high CVEs with a fix | Grype gate in the container workflow; govulncheck; `pnpm audit` |
 | Containers read-only, non-root, no capabilities; workers without internet | `tests/container/run.sh`: 27 of 27 checks |
 | No files remain after download, cancel, or timeout | Job manager tests count the blobs after each path |

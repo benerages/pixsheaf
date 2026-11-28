@@ -1,6 +1,6 @@
 # Configuration
 
-Pixsheaf is configured only through environment variables. Every setting has a secure default; you only need to set what you want to change. In `compose.yaml`, both services read an optional `.env` file in the repository root (see `.env.example`).
+Pixsheaf is configured only through environment variables. Every setting has a secure default; you only need to set what you want to change. In `compose.yaml`, both services read an optional `.env` file in the same folder as `compose.yaml` (see [`.env.example`](../.env.example)).
 
 Unknown `PIXSHEAF_*` variables are rejected at startup, so a typo cannot silently fall back to a default. Invalid values are rejected with an error that names the variable.
 
@@ -32,5 +32,5 @@ Unknown `PIXSHEAF_*` variables are rejected at startup, so a typo cannot silentl
 | `PIXSHEAF_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` | Minimum log level. Rejected API requests are logged at `info`, security events (wrong token, cross-origin request, rate limit) at `warn`, successful requests only at `debug`. Logs never contain file contents, original file names, tokens, or plaintext IP addresses; clients appear as a short pseudonymous key that changes on every restart. |
 | `PIXSHEAF_METRICS_ADDR` | empty (off) | empty or `host:port` | Address of the Prometheus endpoint `GET /metrics` (job, queue, and storage gauges; processed and failed files; responses by status class; security events). It carries no personal data, but keep it off the internet: publish it only on an internal network, for example `:9464` inside the container without a `ports:` entry. |
 
-`compose.yaml` additionally reads `IMAGE_TAG` (default `latest`) to select the image version. It is deliberately not a `PIXSHEAF_*` variable.
+The development `compose.yaml` in the repository additionally reads `IMAGE_TAG` (default `latest`) to select the image version; it is deliberately not a `PIXSHEAF_*` variable. The `compose.yaml` attached to a release pins the images by digest instead.
 

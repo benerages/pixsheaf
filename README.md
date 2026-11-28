@@ -21,13 +21,15 @@ English and German, light and dark, usable with the keyboard, and checked with a
 
 ## Quick start
 
-On any host with Docker Compose (linux/amd64 or linux/arm64):
+On any host with Docker Compose (linux/amd64 or linux/arm64), no source checkout needed:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/benerages/pixsheaf/v1.0.0/compose.yaml
-IMAGE_TAG=1.0.0 docker compose up -d
-# open http://127.0.0.1:8080
+mkdir pixsheaf && cd pixsheaf
+curl -fsSLO https://github.com/benerages/pixsheaf/releases/latest/download/compose.yaml
+docker compose up -d   # then open http://127.0.0.1:8080
 ```
+
+The `compose.yaml` attached to each release pins both images by version and digest, so it always starts exactly the signed images of that release. To update, download the file of the new release and run `docker compose up -d` again.
 
 Pixsheaf listens on `127.0.0.1:8080` only. To use it from other machines, put a TLS reverse proxy in front of it ([docs/deployment.md](docs/deployment.md)). All settings are environment variables with secure defaults ([docs/configuration.md](docs/configuration.md)); more workers process more files at once: `docker compose up -d --scale worker=3`.
 
