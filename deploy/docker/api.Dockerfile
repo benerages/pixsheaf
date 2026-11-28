@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 # pixsheaf-api: Go binary with the embedded web UI on distroless (ADR 0005).
 # Build from the repository root:
 #   docker build -f deploy/docker/api.Dockerfile -t pixsheaf-api .

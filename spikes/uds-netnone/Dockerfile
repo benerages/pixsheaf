@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 # Spike image for ADR 0007 (job transport). Not a production image.
 # Versions follow the Phase 1 report; digests are pinned in the Phase 2
 # scaffold, not in this throwaway spike.
 
 ARG GO_IMAGE=golang:1.27.4-trixie
-ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian13:nonroot
+ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 
 FROM ${GO_IMAGE} AS build
 WORKDIR /src

@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 # pixsheaf-worker: isolated image worker (ADRs 0006, 0008, 0016, 0017, 0018).
 #
 # Build stages run on Wolfi with every package pinned in
