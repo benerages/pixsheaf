@@ -23,3 +23,4 @@ Requiring the extension to match the content exactly would reject common, harmle
 - Requirement 5.2.2 is met for the extension check; the content-matches-extension part is a documented, deliberate deviation with the compensating controls above (ADR 0014).
 - API clients must send a file name. `curl -F file=@photo.heic` does so by default.
 - Folder uploads with non-image files (`.DS_Store`, `Thumbs.db`, sidecar `.xmp` files) see those files refused before they are stored, instead of after sniffing.
+- Addendum (1.1.2): the web UI applies the same extension list before uploading. Unsupported files in a selection or folder are left out and listed in a notice; hidden and system files (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`) are left out silently. Archive entries that fail with `unsupported_format` or `format_disabled` are hidden from the file list and listed in the same notice; `report.json` in the ZIP download still records them.

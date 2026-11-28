@@ -14,6 +14,11 @@ export const en = {
   "drop.chooseFolder": "Choose folder",
   "drop.active": "Release to add",
   "drop.limits": "Up to {size} per image.",
+  "removed.titleOne": "1 file was left out because its format is not supported:",
+  "removed.title": "{count} files were left out because their format is not supported:",
+  "removed.more": "and {count} more",
+  "removed.supported": "Supported formats: {formats}.",
+  "removed.dismiss": "Dismiss notice",
 
   "compare.label": "Comparison position",
   "compare.before": "Before",
@@ -177,6 +182,11 @@ export const de: Record<MessageKey, string> = {
   "drop.chooseFolder": "Ordner auswählen",
   "drop.active": "Loslassen zum Hinzufügen",
   "drop.limits": "Bis {size} pro Bild.",
+  "removed.titleOne": "1 Datei wurde entfernt, weil ihr Format nicht unterstützt wird:",
+  "removed.title": "{count} Dateien wurden entfernt, weil ihr Format nicht unterstützt wird:",
+  "removed.more": "und {count} weitere",
+  "removed.supported": "Unterstützte Formate: {formats}.",
+  "removed.dismiss": "Hinweis schliessen",
 
   "compare.label": "Position des Vergleichs",
   "compare.before": "Vorher",

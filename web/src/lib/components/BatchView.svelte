@@ -9,13 +9,20 @@
   import { baseName, type ExampleVars } from "../naming";
   import { Preview } from "../preview.svelte";
   import Compare from "./Compare.svelte";
+  import RemovedNotice from "./RemovedNotice.svelte";
   import SettingsPanel from "./SettingsPanel.svelte";
 
   let {
     files = $bindable(),
     editor,
+    formats = null,
     onreset,
-  }: { files: PickedFile[]; editor: Editor; onreset: () => void } = $props();
+  }: {
+    files: PickedFile[];
+    editor: Editor;
+    formats?: readonly string[] | null;
+    onreset: () => void;
+  } = $props();
 
   const batch = new Batch();
   const preview = new Preview();
@@ -146,6 +153,8 @@
         <progress class="progress" max={Math.max(images, 1)} value={done}></progress>
       </div>
     {/if}
+
+    <RemovedNotice names={batch.removed} {formats} ondismiss={() => batch.dismissRemoved()} />
 
     {#if batch.error}
       <p

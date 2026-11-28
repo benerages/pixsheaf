@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { fromDataTransfer, fromInput, type PickedFile } from "../files";
+  import { fromDataTransfer, fromInput, type NameFilter, type Picked } from "../files";
   import { t } from "../i18n/i18n.svelte";
 
   let {
     onfiles,
+    filter,
     maxFiles,
     limitText = "",
   }: {
-    onfiles: (files: PickedFile[], folder: boolean) => void;
+    onfiles: (picked: Picked) => void;
+    filter: NameFilter;
     maxFiles: number;
     limitText?: string;
   } = $props();
@@ -24,18 +26,18 @@
     if (!e.dataTransfer) {
       return;
     }
-    const { files, folder } = await fromDataTransfer(e.dataTransfer, maxFiles);
-    if (files.length > 0) {
-      onfiles(files, folder);
+    const picked = await fromDataTransfer(e.dataTransfer, filter, maxFiles);
+    if (picked.files.length > 0 || picked.removed.length > 0) {
+      onfiles(picked);
     }
   }
 
   function picked(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
-    const { files, folder } = fromInput(input.files, maxFiles);
+    const picked = fromInput(input.files, filter, maxFiles);
     input.value = "";
-    if (files.length > 0) {
-      onfiles(files, folder);
+    if (picked.files.length > 0 || picked.removed.length > 0) {
+      onfiles(picked);
     }
   }
 </script>
