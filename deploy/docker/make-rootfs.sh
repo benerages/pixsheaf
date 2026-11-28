@@ -45,13 +45,34 @@ pkgs=$(echo "$pkgs" | tr ' ' '\n' | sed '/^$/d' | sort -u)
 echo "make-rootfs: runtime packages:"
 echo "$pkgs"
 
-mkdir -p "$root/etc/apk"
-cp -a /etc/apk/keys "$root/etc/apk/"
-cp /etc/apk/repositories "$root/etc/apk/"
-# shellcheck disable=SC2086 # one package per word
-apk add --root "$root" --initdb --no-cache --no-scripts $pkgs
-
+# name-1.2.3-r4 lines -> name=1.2.3-r4
+pins() { sed 's/-\([^-]*-r[0-9]*\)$/=\1/'; }
 apk info -v | sort >/tmp/build.pkgs
+
+install_root() {
+  rm -rf "$root"
+  mkdir -p "$root/etc/apk"
+  cp -a /etc/apk/keys "$root/etc/apk/"
+  cp /etc/apk/repositories "$root/etc/apk/"
+  # shellcheck disable=SC2086 # one package per word
+  apk add --root "$root" --initdb --no-cache --no-scripts $1
+}
+
+# Pass 1 resolves the dependencies of the runtime packages. apk picks the
+# newest revision of a dependency that is not pinned, which may be newer
+# than the build stage's (a new Wolfi revision published since the build
+# stage was cached). Pass 2 therefore pins every resolved package to its
+# build-stage version, so the runtime matches what was built and tested.
+install_root "$pkgs"
+# For every package in the root: its build-stage version, compared by exact
+# name (names such as libstdc++ are not safe as regular expressions); a
+# package the build stage lacks stays unpinned and fails the drift check.
+pinned=$(apk info --root "$root" -v | awk '
+  FNR == NR { n = $0; sub(/-[^-]+-r[0-9]+$/, "", n); build[n] = $0; next }
+  { n = $0; sub(/-[^-]+-r[0-9]+$/, "", n); print (n in build) ? build[n] : n }
+' /tmp/build.pkgs - | pins | sort -u)
+install_root "$pinned"
+
 apk info --root "$root" -v | sort >/tmp/root.pkgs
 drift=$(comm -23 /tmp/root.pkgs /tmp/build.pkgs)
 [ -z "$drift" ] || fail "runtime packages differ from the build stage:
