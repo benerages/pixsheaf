@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/benerages/pixsheaf/internal/imaging"
 	"github.com/benerages/pixsheaf/internal/jobproto"
+	"github.com/benerages/pixsheaf/internal/pipeline"
 )
 
 // largePhotoJPEG returns a 45.4 MP JPEG (8256x5504, the size of a Nikon D850
@@ -60,11 +62,16 @@ func TestLargePhotoFitsDefaultMemory(t *testing.T) {
 	if testing.Short() {
 		t.Skip("encodes a 45 MP image")
 	}
-	resp, out, err := limitedRunner(t, 1024).Run(t.Context(), toWebP, largePhotoJPEG(t))
+	input := largePhotoJPEG(t)
+	resp, out, err := limitedRunner(t, 1024).Run(t.Context(), toWebP, input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Error != nil || resp.Output == nil || len(out) == 0 {
+	if resp.Error != nil {
+		explainInProcess(t, input)
+		t.Fatalf("error %s: %s", resp.Error.Code, resp.Error.Message)
+	}
+	if resp.Output == nil || len(out) == 0 {
 		t.Fatalf("response = %+v (%d bytes)", resp, len(out))
 	}
 	if got := *resp.Output; got.Width != 8256 || got.Height != 5504 || got.Format != "webp" {
@@ -82,7 +89,26 @@ func TestLargePhotoOverMemoryLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Error == nil || resp.Error.Code != jobproto.CodeMemoryLimit {
-		t.Fatalf("response = %+v, want %s", resp, jobproto.CodeMemoryLimit)
+	if resp.Error == nil {
+		t.Fatalf("succeeded with %+v, want %s", resp.Output, jobproto.CodeMemoryLimit)
+	}
+	if resp.Error.Code != jobproto.CodeMemoryLimit {
+		t.Fatalf("error %s: %s, want %s", resp.Error.Code, resp.Error.Message, jobproto.CodeMemoryLimit)
+	}
+}
+
+// explainInProcess runs the same conversion in the test process, without a
+// memory limit, and logs the full error, which the job protocol shortens.
+func explainInProcess(t *testing.T, input []byte) {
+	t.Helper()
+	p, err := pipeline.Parse(toWebP.Pipeline, pipeline.Limits{})
+	if err != nil {
+		t.Logf("pipeline: %v", err)
+		return
+	}
+	if _, err := imaging.Process(input, p, imaging.ProcessLimits{}); err != nil {
+		t.Logf("in-process without a memory limit: %v", err)
+	} else {
+		t.Log("in-process without a memory limit: succeeded")
 	}
 }

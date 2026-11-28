@@ -32,16 +32,17 @@ func IsMemoryMessage(msg string) bool {
 const baseJobBytes = 112 << 20
 
 // encoderBytesPerPixel approximates the memory per output pixel that a saver
-// needs on top of the decoded image, which libvips streams at about one byte
-// per input pixel. JPEG, PNG, TIFF, and WebP are measured (36.5 MP photo, one
-// libvips thread); the others are estimates from the encoders' frame buffers.
+// needs on top of the decoded image, which is held in memory at three bytes
+// per input pixel (RGB). JPEG, PNG, TIFF, and WebP are measured with 36.5 and
+// 45 MP photos and one libvips thread; the others are estimates from the
+// encoders' frame buffers.
 var encoderBytesPerPixel = map[string]float64{
-	"jpeg":          1,
-	"pdf":           1, // a JPEG inside the PDF
-	"png":           2.5,
-	"tiff":          4.5,
-	"webp":          5.5,
-	"webp-lossless": 24,
+	"jpeg":          2,
+	"pdf":           2, // a JPEG inside the PDF
+	"png":           6,
+	"tiff":          9,
+	"webp":          6.5,
+	"webp-lossless": 26,
 	"bmp":           7, // Go NRGBA copy plus the encoded file
 	"gif":           6,
 	"avif":          12,
@@ -61,5 +62,5 @@ func EstimateBytes(in, out int64, format string, lossless bool) int64 {
 	if !ok {
 		bpp = 12
 	}
-	return baseJobBytes + in + int64(bpp*float64(out))
+	return baseJobBytes + 3*in + int64(bpp*float64(out))
 }

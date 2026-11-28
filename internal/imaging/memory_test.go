@@ -25,8 +25,8 @@ func TestIsMemoryMessage(t *testing.T) {
 func TestEstimateBytes(t *testing.T) {
 	const photo = 7401 * 4934 // the 36.5 MP photo the WebP figures come from
 	webp := EstimateBytes(photo, photo, "webp", false)
-	if webp < 300<<20 || webp > 400<<20 {
-		t.Errorf("WebP estimate for 36.5 MP = %d MB, want 300-400 MB (measured: about 350 MB)", webp>>20)
+	if webp < 400<<20 || webp > 500<<20 {
+		t.Errorf("WebP estimate for 36.5 MP = %d MB, want 400-500 MB (measured: about 450 MB)", webp>>20)
 	}
 	if lossless := EstimateBytes(photo, photo, "webp", true); lossless < 2*webp {
 		t.Errorf("lossless WebP estimate %d MB is not well above lossy %d MB", lossless>>20, webp>>20)

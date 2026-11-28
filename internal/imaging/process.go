@@ -20,15 +20,22 @@ typedef struct {
 	int keep;
 } px_save_opts;
 
+// Both loads decode into memory ("memory"): above the disc threshold
+// (about 100 MB of pixels, a photo of roughly 35 MP) libvips would otherwise
+// decode into a temporary .v file, which the job sandbox does not allow and
+// whose saver stays blocked (ADR 0008). The job memory limit bounds it.
+
 // First page only; animation follows in a later step.
 static int px_load(const void *buf, size_t len, VipsImage **out) {
-	*out = vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR, NULL);
+	*out = vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR,
+		"memory", TRUE, NULL);
 	return *out ? 0 : -1;
 }
 
 // All pages, as one tall image with page-height set (animations).
 static int px_load_all(const void *buf, size_t len, VipsImage **out) {
-	*out = vips_image_new_from_buffer(buf, len, "", "n", -1, "fail_on", VIPS_FAIL_ON_ERROR, NULL);
+	*out = vips_image_new_from_buffer(buf, len, "", "n", -1, "fail_on", VIPS_FAIL_ON_ERROR,
+		"memory", TRUE, NULL);
 	return *out ? 0 : -1;
 }
 
