@@ -55,8 +55,9 @@ services:
       api:
         condition: service_healthy
     # Each worker runs PIXSHEAF_MAX_CONCURRENCY job processes of up to
-    # PIXSHEAF_JOB_MEMORY_MB each, plus their input and output buffers.
-    mem_limit: 1g
+    # PIXSHEAF_JOB_MEMORY_MB each, plus their input and output buffers:
+    # 2 x 1024 MB + 256 MB with the defaults.
+    mem_limit: 2304m
     cpus: 1.0
     pids_limit: 64
 

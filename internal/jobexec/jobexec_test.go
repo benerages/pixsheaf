@@ -3,6 +3,7 @@ package jobexec
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -16,7 +17,15 @@ import (
 // childEnvVar makes the test binary act as a job process.
 const childEnvVar = "PIXSHEAF_JOBEXEC_TEST_CHILD"
 
+// crashEnvVar makes the test binary act as a job process that dies the way
+// GLib does when an allocation fails, or with another message.
+const crashEnvVar = "PIXSHEAF_JOBEXEC_TEST_CRASH"
+
 func TestMain(m *testing.M) {
+	if msg := os.Getenv(crashEnvVar); msg != "" && len(os.Args) > 1 && os.Args[1] == "job" {
+		_, _ = fmt.Fprintln(os.Stderr, msg)
+		os.Exit(133)
+	}
 	if os.Getenv(childEnvVar) == "1" && len(os.Args) > 1 && os.Args[1] == "job" {
 		os.Exit(Child(os.Args[2:], os.Stdin, os.Stdout))
 	}
@@ -183,5 +192,25 @@ func TestProcessRejectsInvalidPipeline(t *testing.T) {
 	}
 	if resp.Error == nil || resp.Error.Code != jobproto.CodeInternal {
 		t.Errorf("response = %+v, want an internal error", resp)
+	}
+}
+
+func TestCrashAfterFailedAllocationIsMemoryLimit(t *testing.T) {
+	r := testRunner(t)
+	r.Env = append(r.Env, crashEnvVar+"=GLib-ERROR **: ../glib/gmem.c:177: failed to allocate 67108864 bytes")
+	resp, out, err := r.Run(t.Context(), jobproto.Request{Op: jobproto.OpProcess}, samplePNG(t))
+	if err != nil {
+		t.Fatalf("Run: %v, want a job-level failure", err)
+	}
+	if resp.Error == nil || resp.Error.Code != jobproto.CodeMemoryLimit || out != nil {
+		t.Fatalf("response = %+v, want %s", resp, jobproto.CodeMemoryLimit)
+	}
+}
+
+func TestCrashWithOtherMessageIsProcessError(t *testing.T) {
+	r := testRunner(t)
+	r.Env = append(r.Env, crashEnvVar+"=segmentation fault")
+	if _, _, err := r.Run(t.Context(), jobproto.Request{Op: jobproto.OpProcess}, samplePNG(t)); err == nil {
+		t.Fatal("Run succeeded for a crashed job process")
 	}
 }

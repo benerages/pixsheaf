@@ -85,6 +85,7 @@ const (
 	CodeTooManyFrames     = "too_many_frames"
 	CodeDecodeFailed      = "decode_failed"
 	CodeEncodeFailed      = "encode_failed"
+	CodeMemoryLimit       = "memory_limit_exceeded"
 	CodeStepNotApplicable = "step_not_applicable"
 	CodeTargetUnreachable = "target_size_unreachable"
 	CodeTimeout           = "timeout"

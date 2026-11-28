@@ -49,11 +49,14 @@ static int px_join(VipsImage **frames, int n, VipsImage **out) {
 }
 
 // px_decodes reports whether the input decodes completely (0) or not (-1):
-// it loads it again and reads every pixel.
+// it loads it again and reads every pixel. Sequential access streams the
+// pixels, so the check needs little memory.
 static int px_decodes(const void *buf, size_t len, int all_pages) {
 	VipsImage *img = all_pages
-		? vips_image_new_from_buffer(buf, len, "", "n", -1, "fail_on", VIPS_FAIL_ON_ERROR, NULL)
-		: vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR, NULL);
+		? vips_image_new_from_buffer(buf, len, "", "n", -1, "fail_on", VIPS_FAIL_ON_ERROR,
+			"access", VIPS_ACCESS_SEQUENTIAL, NULL)
+		: vips_image_new_from_buffer(buf, len, "", "fail_on", VIPS_FAIL_ON_ERROR,
+			"access", VIPS_ACCESS_SEQUENTIAL, NULL);
 	if (!img)
 		return -1;
 	double avg;
@@ -221,7 +224,7 @@ func (im *image) size() pipeline.Size {
 func (im *image) apply(name string, op func(in *C.VipsImage, out **C.VipsImage) C.int) error {
 	var out *C.VipsImage
 	if op(im.p, &out) != 0 {
-		return fmt.Errorf("%s: %s", name, lastError())
+		return vipsError(nil, name)
 	}
 	im.close()
 	im.p = out
@@ -311,7 +314,7 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 			rc = C.px_load(buf, n, &im.p)
 		}
 		if rc != 0 {
-			return Output{}, fmt.Errorf("%w: %s", ErrDecode, lastError())
+			return Output{}, vipsError(ErrDecode, "load")
 		}
 	}
 	frames := []*image{im}
@@ -367,7 +370,7 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 	// PDF embeds the image as DeviceRGB or DeviceGray, so it is always sRGB.
 	if p.ColorSpace == "srgb" || format == "pdf" {
 		if err := im.toSRGB(); err != nil {
-			return Output{}, fmt.Errorf("%w: %v", ErrDecode, err)
+			return Output{}, asDecode(err)
 		}
 	}
 	keep := C.int(C.VIPS_FOREIGN_KEEP_NONE)
@@ -404,11 +407,17 @@ func Process(input []byte, p pipeline.Pipeline, lim ProcessLimits) (Output, erro
 		data, err = encode(im, saver.id, conv, quality, keep)
 	}
 	if err != nil {
-		// libvips decodes lazily, so a broken input often fails only while
-		// the output is written. Decode it once more to tell the two apart.
-		if errors.Is(err, ErrEncode) && info.Format != "bmp" && !decodes(s, input, animated) {
-			C.vips_error_clear()
-			return Output{}, fmt.Errorf("%w: %v", ErrDecode, err)
+		if errors.Is(err, ErrEncode) && info.Format != "bmp" {
+			// Release the pipeline first, so that the check below gets the
+			// memory the encoder used.
+			for _, f := range frames {
+				f.close()
+			}
+			im.close()
+			s.free()
+			inPixels := int64(info.Width) * int64(info.Height) * int64(pages)
+			need := EstimateBytes(inPixels, final.Pixels()*int64(pages), format, conv.Lossless)
+			return Output{}, encodeFailure(s, input, animated, err, need)
 		}
 		return Output{}, err
 	}
@@ -433,7 +442,7 @@ func splitFrames(strip *image, maxFrames int) ([]*image, error) {
 			for _, g := range frames {
 				g.close()
 			}
-			return nil, fmt.Errorf("%w: frame %d: %s", ErrDecode, i, lastError())
+			return nil, vipsError(ErrDecode, fmt.Sprintf("frame %d", i))
 		}
 		frames = append(frames, f)
 	}
@@ -453,9 +462,56 @@ func joinFrames(frames []*image) (*image, error) {
 	return joined, nil
 }
 
-// decodes reports whether input decodes completely.
-func decodes(s *session, input []byte, allPages bool) bool {
-	return C.px_decodes(s.cbytes(input), C.size_t(len(input)), cbool(allPages)) == 0
+// checkDecodes reports whether input decodes completely: nil, an error
+// wrapping ErrDecode, or one wrapping ErrMemory.
+func checkDecodes(s *session, input []byte, allPages bool) error {
+	if C.px_decodes(s.cbytes(input), C.size_t(len(input)), cbool(allPages)) == 0 {
+		return nil
+	}
+	return vipsError(ErrDecode, "decode")
+}
+
+// encodeFailure tells apart the three reasons for a failed encode. libvips
+// decodes lazily, so a broken input often fails only while the output is
+// written; a decode of its own shows that. An input that decodes but whose
+// encode needs at least half of the job's memory limit most likely ran out
+// of memory: libwebp, for example, reports that only as "unable to encode".
+// need is the estimated memory of the job (EstimateBytes).
+func encodeFailure(s *session, input []byte, animated bool, encErr error, need int64) error {
+	if err := checkDecodes(s, input, animated); err != nil {
+		if errors.Is(err, ErrMemory) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", ErrDecode, encErr)
+	}
+	if limit := memoryLimit(); limit > 0 && need >= limit/2 {
+		return fmt.Errorf("%w: %v (estimated need %d MB, limit %d MB)", ErrMemory, encErr, need>>20, limit>>20)
+	}
+	return encErr
+}
+
+// vipsError turns the pending libvips error into a Go error: one wrapping
+// ErrMemory when an allocation failed, otherwise one wrapping base (or a
+// plain error named after the operation when base is nil).
+func vipsError(base error, op string) error {
+	msg := lastError()
+	switch {
+	case IsMemoryMessage(msg):
+		return fmt.Errorf("%w: %s: %s", ErrMemory, op, msg)
+	case base != nil:
+		return fmt.Errorf("%w: %s", base, msg)
+	default:
+		return fmt.Errorf("%s: %s", op, msg)
+	}
+}
+
+// asDecode wraps err in ErrDecode unless it already reports a memory
+// failure.
+func asDecode(err error) error {
+	if errors.Is(err, ErrMemory) {
+		return err
+	}
+	return fmt.Errorf("%w: %v", ErrDecode, err)
 }
 
 // loadBMP decodes a BMP in Go and copies it into libvips. The Go image is
@@ -498,7 +554,7 @@ func encode(im *image, format C.int, conv pipeline.Convert, quality int, keep C.
 	var out unsafe.Pointer
 	var n C.size_t
 	if C.px_save(im.p, opts, &out, &n) != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrEncode, lastError())
+		return nil, vipsError(ErrEncode, "save")
 	}
 	defer C.g_free(C.gpointer(out))
 	return C.GoBytes(out, C.int(n)), nil
@@ -522,7 +578,7 @@ func encodeToTarget(im *image, format C.int, conv pipeline.Convert, keep C.int, 
 	// runs the (lazy) pipeline again, which is slower but bounded in memory.
 	if im.memoryBytes() <= targetCopyBudget {
 		if err := im.apply("copy to memory", func(in *C.VipsImage, out **C.VipsImage) C.int { return C.px_copy_memory(in, out) }); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrDecode, err)
+			return nil, asDecode(err)
 		}
 	}
 	switch format {

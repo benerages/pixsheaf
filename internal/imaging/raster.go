@@ -85,7 +85,7 @@ func fromGo(src goimage.Image) (*image, error) {
 	}
 	im := &image{}
 	if C.px_from_memory(unsafe.Pointer(&pix[0]), C.int(b.Dx()), C.int(b.Dy()), 4, &im.p) != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrDecode, lastError())
+		return nil, vipsError(ErrDecode, "from Go image")
 	}
 	runtime.KeepAlive(pix)
 	if o, ok := src.(interface{ Opaque() bool }); ok && o.Opaque() {
@@ -105,7 +105,7 @@ func toNRGBA(im *image) (img *goimage.NRGBA, free func(), err error) {
 	var p unsafe.Pointer
 	var n C.size_t
 	if C.px_to_rgba8(im.p, &p, &n) != 0 {
-		return nil, nil, fmt.Errorf("%w: %s", ErrEncode, lastError())
+		return nil, nil, vipsError(ErrEncode, "to Go image")
 	}
 	s := im.size()
 	if int(n) != 4*s.Width*s.Height {

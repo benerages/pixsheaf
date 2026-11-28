@@ -138,6 +138,8 @@ export const en = {
   "error.too_many_pixels": "The image has too many pixels.",
   "error.too_many_frames": "The animation has too many frames.",
   "error.encode_failed": "The result could not be saved in this format.",
+  "error.memory_limit_exceeded":
+    "The image needs more memory than this server allows. A smaller size or another format may work.",
   "error.target_size_unreachable": "The target size cannot be reached; try a larger size.",
   "error.step_not_applicable": "A step does not fit this image (for example the crop area).",
   "error.timeout": "Processing took too long.",
@@ -298,6 +300,8 @@ export const de: Record<MessageKey, string> = {
   "error.too_many_pixels": "Das Bild hat zu viele Pixel.",
   "error.too_many_frames": "Die Animation hat zu viele Einzelbilder.",
   "error.encode_failed": "Das Ergebnis konnte in diesem Format nicht gespeichert werden.",
+  "error.memory_limit_exceeded":
+    "Das Bild braucht mehr Speicher, als dieser Server erlaubt. Eine kleinere Grösse oder ein anderes Format kann helfen.",
   "error.target_size_unreachable":
     "Die Zielgrösse ist nicht erreichbar; versuche eine grössere Zielgrösse.",
   "error.step_not_applicable":

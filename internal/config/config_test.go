@@ -17,7 +17,7 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.SocketPath != "/run/pixsheaf/api.sock" || c.MaxUploadMB != 25 || c.MaxFiles != 50 ||
 		c.JobTimeout != 60*time.Second || c.MaxConcurrency != 2 || len(c.TrustedProxies) != 0 ||
-		c.LogLevel != slog.LevelInfo || c.JobMemoryMB != 384 || c.MaxJobMB != 250 || c.MaxOutputMB != 100 ||
+		c.LogLevel != slog.LevelInfo || c.JobMemoryMB != 1024 || c.MaxJobMB != 250 || c.MaxOutputMB != 100 ||
 		c.MaxInputPixels != 50_000_000 || c.MaxOutputPixels != 50_000_000 || c.MaxFrames != 300 ||
 		c.MaxWatermarkKB != 512 || c.MaxQueue != 100 || c.MaxJobs != 200 || c.JobTTL != 15*time.Minute ||
 		c.TmpDir != "/tmp/pixsheaf" || c.MaxStoreMB != 384 || c.MaxJobsPerClient != 10 ||

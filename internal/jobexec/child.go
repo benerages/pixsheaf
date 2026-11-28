@@ -181,6 +181,8 @@ func process(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 		return failure(jobproto.CodeTooManyPixels, err.Error()), nil
 	case errors.Is(err, imaging.ErrTooManyFrames):
 		return failure(jobproto.CodeTooManyFrames, err.Error()), nil
+	case errors.Is(err, imaging.ErrMemory):
+		return failure(jobproto.CodeMemoryLimit, memoryLimitMessage), nil
 	case errors.Is(err, imaging.ErrDecode):
 		return failure(jobproto.CodeDecodeFailed, "the image could not be decoded"), nil
 	case errors.Is(err, imaging.ErrEncode):
@@ -195,6 +197,10 @@ func process(req jobproto.Request, input []byte) (jobproto.Response, []byte) {
 		return failure(jobproto.CodeInternal, "image processing failed"), nil
 	}
 }
+
+// memoryLimitMessage explains CodeMemoryLimit; operators raise the limit
+// with PIXSHEAF_JOB_MEMORY_MB.
+const memoryLimitMessage = "processing this image needs more memory than the job memory limit allows"
 
 func failure(code, message string) jobproto.Response {
 	return jobproto.Response{Error: &jobproto.Error{Code: code, Message: message}}

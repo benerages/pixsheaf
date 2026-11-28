@@ -11,8 +11,8 @@ Unknown `PIXSHEAF_*` variables are rejected at startup, so a typo cannot silentl
 | `PIXSHEAF_MAX_UPLOAD_MB` | `25` | 1–1024 | Maximum size of one uploaded file. |
 | `PIXSHEAF_MAX_FILES` | `50` | 1–10000 | Maximum number of files per job. |
 | `PIXSHEAF_JOB_TIMEOUT` | `60s` | Go duration, 1s–30m | Maximum processing time per file. |
-| `PIXSHEAF_MAX_CONCURRENCY` | `2` | 1–256 | Files processed in parallel across all clients. Each worker container also runs at most this many job processes, so its `mem_limit` should be at least this × `PIXSHEAF_JOB_MEMORY_MB` plus about 128 MB. |
-| `PIXSHEAF_JOB_MEMORY_MB` | `384` | 64–65536 | Memory limit of one job process (RLIMIT_DATA, ADR 0006). Keep it below the worker container's `mem_limit`. |
+| `PIXSHEAF_MAX_CONCURRENCY` | `2` | 1–256 | Files processed in parallel across all clients. Each worker container also runs at most this many job processes, so its `mem_limit` should be at least this × `PIXSHEAF_JOB_MEMORY_MB` plus about 256 MB. |
+| `PIXSHEAF_JOB_MEMORY_MB` | `1024` | 64–65536 | Memory limit of one job process (RLIMIT_DATA, ADR 0006). Keep it below the worker container's `mem_limit`. A job needs about 110 MB plus, per pixel of a large photo, roughly 2 bytes for JPEG, 4 for PNG, 7 for lossy WebP, and 25 for lossless WebP; the default covers JPEG, PNG, TIFF, and lossy WebP up to `PIXSHEAF_MAX_INPUT_PIXELS`, while AVIF, JPEG XL, and lossless WebP of large photos can need more. A file over the limit fails with `memory_limit_exceeded`. |
 | `PIXSHEAF_MAX_JOB_MB` | `250` | 1–65536 | Maximum size of all uploads of one job together. |
 | `PIXSHEAF_MAX_OUTPUT_MB` | `100` | 1–256 | Maximum size of one processed file. |
 | `PIXSHEAF_MAX_INPUT_PIXELS` | `50000000` | 1–1000000000 | Maximum width × height × frames of an upload, checked from the header before decoding. |

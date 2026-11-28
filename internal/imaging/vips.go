@@ -4,13 +4,30 @@ package imaging
 
 /*
 #cgo pkg-config: vips
+#define _GNU_SOURCE
+#include <pthread.h>
 #include <stdlib.h>
 #include <vips/vips.h>
+
+// px_thread_stacks lowers the default stack of threads created from now on
+// (libvips and codec threads, and later Go threads) to 2 MiB. Thread stacks
+// count against RLIMIT_DATA, and glibc otherwise gives every thread the
+// RLIMIT_STACK size, 8 MiB by default; this saves about 50 MB per job. 2 MiB
+// is the size libvips itself uses where the system default is smaller.
+static void px_thread_stacks(void) {
+	pthread_attr_t a;
+	if (pthread_attr_init(&a) != 0)
+		return;
+	if (pthread_attr_setstacksize(&a, 2 * 1024 * 1024) == 0)
+		pthread_setattr_default_np(&a);
+	pthread_attr_destroy(&a);
+}
 
 // px_init starts libvips with the hardening from ADR 0008: no operation
 // cache, one thread per job, untrusted operations blocked, and every
 // loader and saver blocked until the allowlist re-enables them.
 static int px_init(void) {
+	px_thread_stacks();
 	if (VIPS_INIT("pixsheaf-worker") != 0)
 		return -1;
 	vips_cache_set_max(0);
@@ -71,6 +88,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"syscall"
 	"unsafe"
 )
 
@@ -266,4 +284,14 @@ func lastError() string {
 	msg := C.GoString(C.vips_error_buffer())
 	C.vips_error_clear()
 	return msg
+}
+
+// memoryLimit returns the soft RLIMIT_DATA of this process in bytes, or 0
+// when there is none.
+func memoryLimit() int64 {
+	var r syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_DATA, &r); err != nil || r.Cur == syscall.RLIM_INFINITY || r.Cur > 1<<62 {
+		return 0
+	}
+	return int64(r.Cur) //nolint:gosec // G115: checked against 1<<62 above
 }
