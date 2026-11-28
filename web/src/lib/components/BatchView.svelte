@@ -9,17 +9,26 @@
   import { baseName, type ExampleVars } from "../naming";
   import { Preview } from "../preview.svelte";
   import Compare from "./Compare.svelte";
+  import RemovedNotice from "./RemovedNotice.svelte";
   import SettingsPanel from "./SettingsPanel.svelte";
 
   let {
     files = $bindable(),
     editor,
+    formats = null,
     onreset,
-  }: { files: PickedFile[]; editor: Editor; onreset: () => void } = $props();
+  }: {
+    files: PickedFile[];
+    editor: Editor;
+    formats?: readonly string[] | null;
+    onreset: () => void;
+  } = $props();
 
   const batch = new Batch();
   const preview = new Preview();
-  let selected = $state(0);
+  // -1 until the effect below picks the first image: starting at 0 would
+  // briefly preview a ZIP archive picked as the first file.
+  let selected = $state(-1);
 
   // Only the picked files drive this effect; setFiles also reads the job
   // state, which must not restart the list once the batch runs.
@@ -35,7 +44,10 @@
     preview.reset();
   });
 
-  const previewFile = $derived(selected >= 0 ? files[selected] : undefined);
+  const previewFile = $derived.by(() => {
+    const file = selected >= 0 ? files[selected] : undefined;
+    return file && !file.path.toLowerCase().endsWith(".zip") ? file : undefined;
+  });
   const previewUrl = $derived(previewFile ? URL.createObjectURL(previewFile.file) : "");
   $effect(() => {
     const url = previewUrl;
@@ -146,6 +158,8 @@
         <progress class="progress" max={Math.max(images, 1)} value={done}></progress>
       </div>
     {/if}
+
+    <RemovedNotice names={batch.removed} {formats} ondismiss={() => batch.dismissRemoved()} />
 
     {#if batch.error}
       <p

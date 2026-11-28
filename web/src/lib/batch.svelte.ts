@@ -19,6 +19,14 @@ import type { PickedFile } from "./files";
 
 const parallelUploads = 3;
 
+/**
+ * Error codes of archive entries that are simply not images this server
+ * accepts (a PDF in a ZIP, for example). Such entries are left out of the
+ * list and named in a notice instead of showing up as failed files; the
+ * report in the ZIP download still lists them.
+ */
+const unsupportedEntryCodes = new Set(["unsupported_format", "format_disabled"]);
+
 export interface Row {
   key: string;
   name: string;
@@ -38,6 +46,11 @@ export class Batch {
   jobStatus = $state<Job["status"] | "">("");
   zipDownloaded = $state(false);
   error = $state("");
+  /**
+   * Archive entries left out because their format is not supported.
+   * Dismissed entries stay, so that later job updates do not bring them back.
+   */
+  private removedEntries = $state<{ id: string; name: string; dismissed: boolean }[]>([]);
 
   private stop: (() => void) | null = null;
   private controller: AbortController | null = null;
@@ -141,6 +154,15 @@ export class Batch {
       return;
     }
     if (file.archiveId) {
+      if (file.status === "failed" && unsupportedEntryCodes.has(file.error?.code ?? "")) {
+        if (!this.removedEntries.some((r) => r.id === file.id)) {
+          this.removedEntries = [
+            ...this.removedEntries,
+            { id: file.id, name: file.source ?? "", dismissed: false },
+          ];
+        }
+        return;
+      }
       // An image unpacked from an archive.
       this.rows = [
         ...this.rows,
@@ -156,6 +178,15 @@ export class Batch {
         },
       ];
     }
+  }
+
+  /** Names of the archive entries left out, for the notice. */
+  get removed(): string[] {
+    return this.removedEntries.filter((r) => !r.dismissed).map((r) => r.name);
+  }
+
+  dismissRemoved(): void {
+    this.removedEntries = this.removedEntries.map((r) => ({ ...r, dismissed: true }));
   }
 
   archiveName(file: JobFile | null): string {
@@ -211,5 +242,6 @@ export class Batch {
     this.zipDownloaded = false;
     this.rows = [];
     this.error = "";
+    this.removedEntries = [];
   }
 }

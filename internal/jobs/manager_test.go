@@ -80,7 +80,13 @@ func TestSingleFileLifecycle(t *testing.T) {
 	if err := m.Authorize(j.ID, token); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"", token[:42] + "A", "x"} {
+	// Change the last character to one that surely differs: a fixed "A"
+	// matched the real token whenever that already ended in "A".
+	last := "A"
+	if token[42] == 'A' {
+		last = "B"
+	}
+	for _, bad := range []string{"", token[:42] + last, "x"} {
 		if err := m.Authorize(j.ID, bad); !errors.Is(err, ErrUnauthorized) {
 			t.Errorf("token %q: err = %v", bad, err)
 		}
