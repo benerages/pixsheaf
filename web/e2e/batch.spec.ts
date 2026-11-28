@@ -1,8 +1,19 @@
 import { expect, test } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileInput, fixture, storedZip, watchErrors } from "./helpers";
 
-const pdf = { name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7\n") };
+const pdfBytes = Buffer.from("%PDF-1.7\n");
+
+/**
+ * Writes a generated test file to the test's output folder. Real paths are
+ * needed: Playwright cannot mix paths with buffers, and Chromium hands
+ * buffers to the page through blob: URLs that the strict CSP blocks.
+ */
+function tempFile(name: string, data: Buffer): string {
+  const path = test.info().outputPath(name);
+  writeFileSync(path, data);
+  return path;
+}
 
 test("several files switch to batch mode and download as ZIP", async ({ page }) => {
   const errors = watchErrors(page);
@@ -42,7 +53,11 @@ test("removing files before the start keeps the list in sync", async ({ page }) 
 
 test("unsupported files are left out of a selection and listed", async ({ page }) => {
   await page.goto("/");
-  await fileInput(page).setInputFiles([fixture("gradient.png"), fixture("broken.png"), pdf]);
+  await fileInput(page).setInputFiles([
+    fixture("gradient.png"),
+    fixture("broken.png"),
+    tempFile("notes.pdf", pdfBytes),
+  ]);
   await expect(page.getByRole("heading", { name: "2 files" })).toBeVisible();
   const notice = page.getByRole("status").filter({ hasText: "left out" });
   await expect(notice).toContainText("1 file was left out because its format is not supported");
@@ -54,7 +69,7 @@ test("unsupported files are left out of a selection and listed", async ({ page }
 
 test("a selection without supported files stays on the start page", async ({ page }) => {
   await page.goto("/");
-  await fileInput(page).setInputFiles([pdf]);
+  await fileInput(page).setInputFiles([tempFile("notes.pdf", pdfBytes)]);
   await expect(page.getByRole("status").filter({ hasText: "left out" })).toContainText("notes.pdf");
   await expect(page.getByRole("button", { name: "Choose image" })).toBeVisible();
 });
@@ -64,11 +79,9 @@ test("unsupported entries of a ZIP archive are left out and listed", async ({ pa
   await page.goto("/");
   const zip = storedZip([
     { name: "photos/gradient.png", data: readFileSync(fixture("gradient.png")) },
-    { name: "photos/notes.pdf", data: pdf.buffer },
+    { name: "photos/notes.pdf", data: pdfBytes },
   ]);
-  await fileInput(page).setInputFiles([
-    { name: "photos.zip", mimeType: "application/zip", buffer: zip },
-  ]);
+  await fileInput(page).setInputFiles([tempFile("photos.zip", zip)]);
   await page.getByRole("button", { name: /^Process/ }).click();
 
   const rows = page.getByRole("row");
