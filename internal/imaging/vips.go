@@ -287,10 +287,10 @@ func lastError() string {
 }
 
 // memoryLimit returns the soft RLIMIT_DATA of this process in bytes, or 0
-// when there is none.
+// when there is none (RLIM_INFINITY is the largest uint64).
 func memoryLimit() int64 {
 	var r syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_DATA, &r); err != nil || r.Cur == syscall.RLIM_INFINITY || r.Cur > 1<<62 {
+	if err := syscall.Getrlimit(syscall.RLIMIT_DATA, &r); err != nil || r.Cur > 1<<62 {
 		return 0
 	}
 	return int64(r.Cur) //nolint:gosec // G115: checked against 1<<62 above

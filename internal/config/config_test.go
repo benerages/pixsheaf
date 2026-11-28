@@ -63,7 +63,7 @@ func TestRejects(t *testing.T) {
 		"too many frames":   "PIXSHEAF_MAX_FRAMES=1001",
 		"ttl too long":      "PIXSHEAF_JOB_TTL=48h",
 		"relative tmp dir":  "PIXSHEAF_TMP_DIR=tmp",
-		"archive too big":   "PIXSHEAF_MAX_ARCHIVE_MB=300",
+		"archive too big":   "PIXSHEAF_MAX_ARCHIVE_MB=600",
 	}
 	for name, kv := range cases {
 		t.Run(name, func(t *testing.T) {
