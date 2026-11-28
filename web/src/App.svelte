@@ -3,6 +3,7 @@
   import { getCapabilities, type Capabilities } from "./lib/api/client";
   import BatchView from "./lib/components/BatchView.svelte";
   import DropZone from "./lib/components/DropZone.svelte";
+  import Footer from "./lib/components/Footer.svelte";
   import Header from "./lib/components/Header.svelte";
   import SingleView from "./lib/components/SingleView.svelte";
   import { Editor } from "./lib/editor.svelte";
@@ -75,7 +76,12 @@
   {t("app.skip")}
 </a>
 <Header onhome={reset} />
-<main id="main" tabindex="-1" bind:this={main} class="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
+<main
+  id="main"
+  tabindex="-1"
+  bind:this={main}
+  class="mx-auto w-full max-w-6xl flex-1 px-4 pb-16 sm:px-6"
+>
   {#if files.length === 0}
     <div class="mx-auto max-w-3xl pt-6 sm:pt-12">
       <h1 class="mb-6 text-center text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -91,3 +97,4 @@
     {/key}
   {/if}
 </main>
+<Footer version={caps?.version ?? null} />

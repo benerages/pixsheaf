@@ -5,6 +5,8 @@ export const en = {
   "app.tagline": "Convert, resize, and optimize images. Self-hosted, nothing is stored.",
   "lang.label": "Language",
   "app.skip": "Skip to content",
+  "footer.version": "Version {version}",
+  "footer.source": "Source code on GitHub (opens in a new tab)",
 
   "drop.title": "Drop an image here",
   "drop.hint": "or paste it, or choose a file. Several files, a folder, or a ZIP archive work too.",
@@ -165,6 +167,8 @@ export const de: Record<MessageKey, string> = {
     "Bilder umwandeln, verkleinern und optimieren. Selbst gehostet, nichts wird gespeichert.",
   "lang.label": "Sprache",
   "app.skip": "Zum Inhalt springen",
+  "footer.version": "Version {version}",
+  "footer.source": "Quellcode auf GitHub (öffnet in einem neuen Tab)",
 
   "drop.title": "Bild hier ablegen",
   "drop.hint":

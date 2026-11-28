@@ -9,6 +9,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     test("start page", async ({ page }) => {
       await page.goto("/");
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page.getByRole("contentinfo")).toContainText("Version");
       await expectAccessible(page);
     });
 
