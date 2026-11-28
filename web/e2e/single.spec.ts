@@ -37,6 +37,24 @@ test("one image: process, compare, and download a single file", async ({ page, b
   expect(errors()).toEqual([]);
 });
 
+test("resize suggests half the size in percent and the original size in pixels", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await fileInput(page).setInputFiles(fixture("gradient.png"));
+  await expect(page.getByText("64 × 48 px").first()).toBeVisible();
+
+  const mode = page.getByLabel("Resize", { exact: true });
+  await mode.selectOption("percent");
+  await expect(page.locator("#resize-value")).toHaveValue("50");
+  await mode.selectOption("width");
+  await expect(page.locator("#resize-value")).toHaveValue("64");
+  await mode.selectOption("height");
+  await expect(page.locator("#resize-value")).toHaveValue("48");
+  await mode.selectOption("longest");
+  await expect(page.locator("#resize-value")).toHaveValue("64");
+});
+
 test("a broken image shows a readable error", async ({ page }) => {
   await page.goto("/");
   await fileInput(page).setInputFiles(fixture("broken.png"));

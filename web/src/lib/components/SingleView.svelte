@@ -29,6 +29,18 @@
 
   $effect(() => () => preview.reset());
 
+  // The source size for resize suggestions: the browser's size of the image
+  // (already EXIF-oriented), or the server's for formats the browser cannot
+  // show, such as HEIC.
+  $effect(() => {
+    const input = preview.input;
+    editor.source = beforeSize
+      ? { width: beforeSize[0], height: beforeSize[1] }
+      : input?.width && input.height
+        ? { width: input.width, height: input.height }
+        : null;
+  });
+
   const out = $derived(preview.output);
   const locale = $derived(numberLocale());
 </script>
