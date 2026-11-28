@@ -18,7 +18,7 @@
     "gen:docs": "redocly bundle ../api/openapi.yaml --ext json --output node_modules/.cache/openapi.json && node scripts/api-docs.mjs node_modules/.cache/openapi.json ../docs/api.md"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.14.0",
+    "@axe-core/playwright": "4.14.1",
     "@playwright/test": "1.65.1",
     "@redocly/cli": "2.82.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
