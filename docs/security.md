@@ -37,7 +37,7 @@ In the tables, "Project §…" refers to the sections of the [project brief](pro
 
 | TB | Boundary | Crossing | Notes |
 |---|---|---|---|
-| TB1 | Browser → reverse proxy | HTTPS | Untrusted client; anonymous by default (open decision O2) |
+| TB1 | Browser → reverse proxy | HTTPS | Untrusted client; anonymous by default (ADR 0015) |
 | TB2 | Reverse proxy → API | HTTP on an internal network or 127.0.0.1 | `X-Forwarded-For` is trusted only from `PIXSHEAF_TRUSTED_PROXIES` |
 | TB3 | API → worker socket | Pathname Unix socket on a shared tmpfs volume | The API is the only party that parses ZIP and HTTP; workers have no network |
 | TB4 | Worker supervisor → per-job child | fork/exec, pipes | The child applies rlimits, no_new_privs, Landlock, and seccomp before it decodes anything |
@@ -46,7 +46,7 @@ In the tables, "Project §…" refers to the sections of the [project brief](pro
 
 ### Threats and mitigations
 
-ASVS references are to **OWASP ASVS 5.0 chapter V5 (File Handling)** ([ASVS 5.0 V5](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x14-V5-File-Handling.md)). Requirements not in V5 map to sections of the project instructions. Requirement IDs were paraphrased from the source; re-check the exact wording before quoting them in `docs/security.md`.
+ASVS references are to **OWASP ASVS 5.0 chapter V5 (File Handling)** ([ASVS 5.0 V5](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x14-V5-File-Handling.md)). Requirements not in V5 map to sections of the project instructions. The full Level 2 review of all ASVS chapters is in [asvs-review.md](asvs-review.md).
 
 **Spoofing**
 
@@ -61,7 +61,7 @@ ASVS references are to **OWASP ASVS 5.0 chapter V5 (File Handling)** ([ASVS 5.0 
 
 | ID | Threat | Mitigation | Requirement / ASVS |
 |---|---|---|---|
-| T1 | Zip Slip (`../`, absolute paths, symlinks) in an uploaded ZIP | Parse ZIPs only in the API with pure-Go `archive/zip`; ignore entry paths and use random internal IDs; reject symlink entries and nested archives | **5.3.2, 5.3.3 (L3), 5.2.5 (L3)** |
+| T1 | Zip Slip (`../`, absolute paths, symlinks) in an uploaded ZIP | ZIPs are unpacked only inside the worker sandbox with pure-Go `archive/zip` (ADR 0022); entry paths are cleaned per segment and used only for output names, never for file system paths; symlinks, encrypted entries, and nested archives fail individually | **5.3.2, 5.3.3 (L3), 5.2.5 (L3)** |
 | T2 | Polyglot or disguised file (wrong extension or Content-Type) | Detect type from magic bytes against an allowlist; fully decode and re-encode; serve only the re-encoded bytes with a fixed `Content-Type`, `nosniff`, and `attachment` | **5.2.2**; [OWASP cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html) |
 | T3 | Pipeline or preset JSON injects oversized or unexpected parameters | JSON Schema 2020-12 with `additionalProperties: false`; limits on steps, dimensions, and watermark size | Project §Input; ADR 0009 |
 | T4 | A compromised worker tampers with other jobs' data through the shared volume | Stream payloads over the socket, never through shared files; per-job tmpfs directory restricted by Landlock in the child | ADR 0006/0007 |
@@ -108,4 +108,21 @@ ASVS references are to **OWASP ASVS 5.0 chapter V5 (File Handling)** ([ASVS 5.0 
 | E4 | Uploaded files execute as code | No writable executable paths; tmpfs mounted `noexec`; files are never placed in a served directory | **5.3.1** |
 | E5 | A malicious OpenAPI spec injects code during codegen | The spec is written by the project; oapi-codegen pinned to ≥ v2.8.2 | ADR 0011 |
 
-**Coverage of ASVS V5 at L2:** 5.1.1 (documentation, in `docs/configuration.md` and `docs/security.md`), 5.2.1–5.2.3, 5.3.1–5.3.2, and 5.4.1–5.4.2 are covered. **5.4.3 (antivirus scanning) is open** (O1). Pixsheaf voluntarily adopts the L3 items 5.2.4, 5.2.5, 5.2.6, and 5.3.3 ([ASVS 5.0 V5](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x14-V5-File-Handling.md)). Mapping documents that use ASVS 4.0.3 numbering (V12) do not apply ([ASVS 4.0.3 V12](https://raw.githubusercontent.com/OWASP/ASVS/v4.0.3/4.0/en/0x20-V12-Files-Resources.md)).
+**Coverage of ASVS V5 at L2:** 5.1.1 (documentation, in `docs/configuration.md` and `docs/security.md`), 5.2.1–5.2.3, 5.3.1–5.3.2, and 5.4.1–5.4.2 are covered. **5.4.3 (antivirus scanning) is a deliberate deviation** (ADR 0014). Pixsheaf voluntarily adopts the L3 items 5.2.4, 5.2.5, 5.2.6, and 5.3.3 ([ASVS 5.0 V5](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x14-V5-File-Handling.md)). Mapping documents that use ASVS 4.0.3 numbering (V12) do not apply ([ASVS 4.0.3 V12](https://raw.githubusercontent.com/OWASP/ASVS/v4.0.3/4.0/en/0x20-V12-Files-Resources.md)).
+
+## Logging
+
+Both services write JSON lines to standard output and nowhere else (ASVS 5.0 V16).
+
+| Event | Level | Fields |
+|---|---|---|
+| Rejected API request (4xx) | info, event `request_rejected` | `route` (pattern, such as `POST /api/v1/jobs/{jobId}/files`), `method`, `status`, `code`, `duration_ms`, `job` (job ID, if any), `client` |
+| Wrong or missing job token (401) | warn, event `auth_failed` | as above |
+| Cross-origin state change (403) | warn, event `cross_origin_rejected` | as above |
+| Rate limit (429) | warn, event `rate_limited` | as above |
+| Server error (5xx) | error, event `server_error` | as above; the cause is logged in a separate entry without user data |
+| Successful API request | debug only | as above |
+| Start, shutdown, worker claims and failures | info to error | version, addresses, slot number |
+
+`client` is the first 12 hex digits of an HMAC-SHA-256 of the client address, keyed with a secret that exists only in memory and changes on every start. It allows correlating the requests of one client within one run, but not identifying the client. File contents, original file names, job tokens, and IP addresses are never logged; `TestSecurityEventsLoggedAndCounted` checks this. The same events are counted on the optional metrics endpoint (`pixsheaf_security_events_total`).
+

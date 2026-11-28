@@ -104,10 +104,11 @@ jobs:
         run: pnpm audit --audit-level high
       - name: API specification lint
         run: pnpm lint:api
-      - name: Generated API types are current
+      - name: Generated API types and reference are current
         run: |
           pnpm gen:api
-          git diff --exit-code -- src/lib/api
+          pnpm gen:docs
+          git diff --exit-code -- src/lib/api ../docs/api.md
       - name: Lint
         run: pnpm lint
       - name: Type check

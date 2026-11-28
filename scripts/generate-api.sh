@@ -3,6 +3,7 @@
 # specification, inside containers so that no local Go or Node.js is needed:
 #   internal/api/api.gen.go       Go models (oapi-codegen)
 #   web/src/lib/api/schema.d.ts   TypeScript types (openapi-typescript)
+#   docs/api.md                   API reference (web/scripts/api-docs.mjs)
 # CI runs the same generators and fails if the committed output differs.
 # Requires Docker and internet access.
 set -Eeuo pipefail
@@ -31,8 +32,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
     pnpm=/tmp/npm-global/bin/pnpm
     $pnpm install --frozen-lockfile --store-dir /tmp/pnpm-store > /dev/null
     $pnpm run --silent gen:api
+    $pnpm run --silent gen:docs > /dev/null
     $pnpm run --silent lint:api
   '
-echo "generated web/src/lib/api/schema.d.ts; specification lint passed"
+echo "generated web/src/lib/api/schema.d.ts and docs/api.md; specification lint passed"
 
-git --no-pager diff --stat -- internal/api web/src/lib/api go.mod go.sum
+git --no-pager diff --stat -- internal/api web/src/lib/api docs/api.md go.mod go.sum
